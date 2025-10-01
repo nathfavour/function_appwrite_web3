@@ -1,16 +1,21 @@
 {
-  "name": "starter-template",
+  "name": "web3-auth-functions",
   "version": "1.0.0",
-  "description": "",
-  "main": "src/main.js",
+  "description": "Appwrite Functions for Web3 Wallet Authentication",
+  "main": "dist/main.js",
   "type": "module",
   "scripts": {
-    "format": "prettier --write ."
+    "build": "tsc",
+    "format": "prettier --write .",
+    "dev": "tsc --watch"
   },
   "dependencies": {
+    "ethers": "^6.15.0",
     "node-appwrite": "^14.1.0"
   },
   "devDependencies": {
-    "prettier": "^3.2.5"
+    "@types/node": "^24.6.1",
+    "prettier": "^3.2.5",
+    "typescript": "^5.9.3"
   }
 }
