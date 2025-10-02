@@ -1,4 +1,12 @@
-// Type definitions for Appwrite Function context
+/**
+ * Type definitions for Appwrite Function context and API contracts
+ * Replicates the exact data structures from the Next.js implementation
+ */
+
+// ============================================================================
+// Appwrite Function Context Types
+// ============================================================================
+
 export interface AppwriteFunctionContext {
   req: AppwriteRequest;
   res: AppwriteResponse;
@@ -27,26 +35,86 @@ export interface AppwriteResponse {
   redirect: (url: string, statusCode?: number) => void;
 }
 
-// API Request/Response types
+// ============================================================================
+// API Request/Response Types (matches Next.js /api/custom-token)
+// ============================================================================
+
+/**
+ * Authentication request payload
+ * Matches the POST body sent from the Next.js login page
+ */
 export interface AuthRequest {
-  email: string;
-  address: string;
-  signature: string;
-  message: string;
+  email: string;           // User's email address
+  address: string;         // Ethereum wallet address (0x...)
+  signature: string;       // Signature produced by wallet
+  message: string;         // Original message (timestamp part: auth-{timestamp})
 }
 
+/**
+ * Successful authentication response
+ * Contains the custom token needed to create an Appwrite session
+ */
 export interface AuthResponse {
+  userId: string;          // Appwrite user ID
+  secret: string;          // Custom token secret for session creation
+}
+
+/**
+ * Error response structure
+ * Returned for any authentication failures
+ */
+export interface ErrorResponse {
+  error: string;           // Human-readable error message
+}
+
+// ============================================================================
+// User Preference Types
+// ============================================================================
+
+/**
+ * User preferences stored in Appwrite
+ * Used to bind wallet addresses to user accounts
+ */
+export interface UserPrefs {
+  walletEth?: string;                  // Normalized lowercase Ethereum address
+  passkey_credentials?: boolean;        // Indicator of passkey authentication setup
+  [key: string]: any;                  // Allow additional custom preferences
+}
+
+// ============================================================================
+// Token Types
+// ============================================================================
+
+/**
+ * Custom token data structure
+ * Returned by Appwrite Users API
+ */
+export interface TokenData {
   userId: string;
   secret: string;
 }
 
-export interface ErrorResponse {
-  error: string;
+// ============================================================================
+// Health Check Types
+// ============================================================================
+
+/**
+ * Health check response
+ */
+export interface HealthResponse {
+  status: 'ok';
+  service: string;
+  timestamp: string;
 }
 
-// User preference types
-export interface UserPrefs {
-  walletEth?: string;
-  passkey_credentials?: boolean;
-  [key: string]: any;
+/**
+ * API documentation response
+ */
+export interface ApiDocumentation {
+  service: string;
+  version: string;
+  endpoints: Record<string, any>;
+  documentation: string;
+  security: string;
 }
+

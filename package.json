@@ -1,20 +1,22 @@
 {
   "name": "web3-auth-functions",
   "version": "1.0.0",
-  "description": "Appwrite Functions for Web3 Wallet Authentication",
+  "description": "Appwrite Functions for Web3 Wallet Authentication - Replicates Next.js API functionality",
   "main": "dist/main.js",
   "type": "module",
   "scripts": {
     "build": "tsc",
     "format": "prettier --write .",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "test": "tsc --noEmit",
+    "clean": "rm -rf dist"
   },
   "dependencies": {
     "ethers": "^6.15.0",
-    "node-appwrite": "^14.1.0"
+    "node-appwrite": "^19.1.0"
   },
   "devDependencies": {
-    "@types/node": "^24.6.1",
+    "@types/node": "^20.0.0",
     "prettier": "^3.2.5",
     "typescript": "^5.9.3"
   }
