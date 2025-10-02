@@ -1,16 +1,6 @@
 # 🔌 Client Integration Examples
 
-Complete examples for integrating the Web3 Authentication Function using **Appwrite's Functions SDK** (no manual API key handling required!).
-
-## 🎯 Key Advantage: SDK-Based Execution
-
-Instead of manually calling HTTP endpoints and managing API keys, we use Appwrite's Functions SDK which:
-- ✅ **No API key exposure** - API key stays in function environment
-- ✅ **Built-in authentication** - Uses Appwrite's session management
-- ✅ **Cleaner code** - Less boilerplate
-- ✅ **Type safety** - Full TypeScript support
-
----
+Complete examples for integrating the Web3 Authentication Function into your frontend application.
 
 ## Table of Contents
 
@@ -55,7 +45,8 @@ Instead of manually calling HTTP endpoints and managing API keys, we use Appwrit
     // Configuration
     const APPWRITE_ENDPOINT = 'https://cloud.appwrite.io/v1';
     const APPWRITE_PROJECT = 'your-project-id';
-    const FUNCTION_ID = 'your-function-id'; // Your deployed Web3 auth function
+    const FUNCTION_URL = 'https://cloud.appwrite.io/v1/functions/web3-auth/executions';
+    const API_KEY = 'your-api-key'; // ⚠️ Use environment variable in production
 
     // Initialize Appwrite
     const client = new Appwrite.Client()
@@ -63,7 +54,6 @@ Instead of manually calling HTTP endpoints and managing API keys, we use Appwrit
       .setProject(APPWRITE_PROJECT);
 
     const account = new Appwrite.Account(client);
-    const functions = new Appwrite.Functions(client);
 
     // Check authentication on load
     window.addEventListener('load', async () => {
@@ -109,25 +99,34 @@ Instead of manually calling HTTP endpoints and managing API keys, we use Appwrit
           params: [fullMessage, address]
         });
 
-        // Call Appwrite Function using SDK
-        const execution = await functions.createExecution(
-          FUNCTION_ID,
-          JSON.stringify({ email, address, signature, message }),
-          false // Get immediate response
-        );
+        // Call Appwrite Function
+        const response = await fetch(FUNCTION_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Appwrite-Project': APPWRITE_PROJECT,
+            'x-appwrite-key': API_KEY
+          },
+          body: JSON.stringify({
+            path: '/auth',
+            method: 'POST',
+            body: { email, address, signature, message }
+          })
+        });
 
-        // Parse response
-        const response = JSON.parse(execution.responseBody);
+        const data = await response.json();
         
-        if (execution.responseStatusCode !== 200) {
-          throw new Error(response.error || 'Authentication failed');
+        if (!response.ok) {
+          throw new Error(data.error || 'Authentication failed');
         }
 
-        // Create Appwrite session with returned token
-        await account.createSession({
-          userId: response.userId,
-          secret: response.secret
-        });
+        // Extract userId and secret from response
+        const { userId, secret } = data.response 
+          ? JSON.parse(data.response) 
+          : data;
+
+        // Create Appwrite session
+        await account.createSession({ userId, secret });
 
         // Refresh user info
         const user = await account.get();
@@ -168,7 +167,7 @@ Instead of manually calling HTTP endpoints and managing API keys, we use Appwrit
 
 ```typescript
 import { useState, useCallback } from 'react';
-import { Client, Account, Functions } from 'appwrite';
+import { Client, Account } from 'appwrite';
 
 interface UseWeb3AuthReturn {
   loading: boolean;
@@ -188,7 +187,6 @@ export function useWeb3Auth(): UseWeb3AuthReturn {
     .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT!);
 
   const account = new Account(client);
-  const functions = new Functions(client);
 
   const connectWallet = useCallback(async (email: string) => {
     setLoading(true);
@@ -216,25 +214,21 @@ export function useWeb3Auth(): UseWeb3AuthReturn {
         params: [fullMessage, address]
       }) as string;
 
-      // Call Appwrite Function
-      const execution = await functions.createExecution(
-        process.env.NEXT_PUBLIC_FUNCTION_ID!,
-        JSON.stringify({ email, address, signature, message }),
-        false
-      );
+      // Call function
+      const response = await fetch(process.env.NEXT_PUBLIC_FUNCTION_URL! + '/auth', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-appwrite-key': process.env.NEXT_PUBLIC_API_KEY!
+        },
+        body: JSON.stringify({ email, address, signature, message })
+      });
 
-      // Parse response
-      const response = JSON.parse(execution.responseBody);
-      
-      if (execution.responseStatusCode !== 200) {
-        throw new Error(response.error || 'Authentication failed');
-      }
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
 
       // Create session
-      await account.createSession({
-        userId: response.userId,
-        secret: response.secret
-      });
+      await account.createSession(data);
 
       // Get user
       const currentUser = await account.get();
@@ -302,14 +296,6 @@ export default function LoginPage() {
 }
 ```
 
-### Environment Variables (.env.local)
-
-```env
-NEXT_PUBLIC_APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1
-NEXT_PUBLIC_APPWRITE_PROJECT=your-project-id
-NEXT_PUBLIC_FUNCTION_ID=your-function-id
-```
-
 ---
 
 ## Vue.js
@@ -318,7 +304,7 @@ NEXT_PUBLIC_FUNCTION_ID=your-function-id
 
 ```typescript
 import { ref, Ref } from 'vue';
-import { Client, Account, Functions } from 'appwrite';
+import { Client, Account } from 'appwrite';
 
 interface Web3Auth {
   loading: Ref<boolean>;
@@ -338,7 +324,6 @@ export function useWeb3Auth(): Web3Auth {
     .setProject(import.meta.env.VITE_APPWRITE_PROJECT);
 
   const account = new Account(client);
-  const functions = new Functions(client);
 
   const connectWallet = async (email: string) => {
     loading.value = true;
@@ -363,24 +348,19 @@ export function useWeb3Auth(): Web3Auth {
         params: [fullMessage, address]
       });
 
-      // Call Appwrite Function
-      const execution = await functions.createExecution(
-        import.meta.env.VITE_FUNCTION_ID,
-        JSON.stringify({ email, address, signature, message }),
-        false
-      );
-
-      const response = JSON.parse(execution.responseBody);
-      
-      if (execution.responseStatusCode !== 200) {
-        throw new Error(response.error);
-      }
-
-      await account.createSession({
-        userId: response.userId,
-        secret: response.secret
+      const response = await fetch(import.meta.env.VITE_FUNCTION_URL + '/auth', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-appwrite-key': import.meta.env.VITE_API_KEY
+        },
+        body: JSON.stringify({ email, address, signature, message })
       });
-      
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+
+      await account.createSession(data);
       user.value = await account.get();
 
     } catch (err: any) {
@@ -441,14 +421,6 @@ const handleSubmit = async () => {
 </script>
 ```
 
-### Environment Variables (.env)
-
-```env
-VITE_APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1
-VITE_APPWRITE_PROJECT=your-project-id
-VITE_FUNCTION_ID=your-function-id
-```
-
 ---
 
 ## Svelte
@@ -457,7 +429,7 @@ VITE_FUNCTION_ID=your-function-id
 
 ```typescript
 import { writable } from 'svelte/store';
-import { Client, Account, Functions } from 'appwrite';
+import { Client, Account } from 'appwrite';
 
 interface AuthState {
   loading: boolean;
@@ -477,7 +449,6 @@ function createWeb3Auth() {
     .setProject(import.meta.env.VITE_APPWRITE_PROJECT);
 
   const account = new Account(client);
-  const functions = new Functions(client);
 
   return {
     subscribe,
@@ -503,24 +474,21 @@ function createWeb3Auth() {
           params: [fullMessage, address]
         });
 
-        const execution = await functions.createExecution(
-          import.meta.env.VITE_FUNCTION_ID,
-          JSON.stringify({ email, address, signature, message }),
-          false
-        );
-
-        const response = JSON.parse(execution.responseBody);
-        
-        if (execution.responseStatusCode !== 200) {
-          throw new Error(response.error);
-        }
-
-        await account.createSession({
-          userId: response.userId,
-          secret: response.secret
+        const response = await fetch(import.meta.env.VITE_FUNCTION_URL + '/auth', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-appwrite-key': import.meta.env.VITE_API_KEY
+          },
+          body: JSON.stringify({ email, address, signature, message })
         });
-        
+
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+
+        await account.createSession(data);
         const user = await account.get();
+
         update(state => ({ ...state, user, loading: false }));
 
       } catch (err: any) {
@@ -586,7 +554,7 @@ export const web3Auth = createWeb3Auth();
 ```typescript
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
-import { Client, Account, Functions } from 'appwrite';
+import { Client, Account } from 'appwrite';
 import { environment } from '../environments/environment';
 
 interface AuthState {
@@ -609,7 +577,6 @@ export class Web3AuthService {
 
   private client: Client;
   private account: Account;
-  private functions: Functions;
 
   constructor() {
     this.client = new Client()
@@ -617,7 +584,6 @@ export class Web3AuthService {
       .setProject(environment.appwriteProject);
 
     this.account = new Account(this.client);
-    this.functions = new Functions(this.client);
   }
 
   async connectWallet(email: string): Promise<void> {
@@ -642,24 +608,21 @@ export class Web3AuthService {
         params: [fullMessage, address]
       });
 
-      const execution = await this.functions.createExecution(
-        environment.functionId,
-        JSON.stringify({ email, address, signature, message }),
-        false
-      );
-
-      const response = JSON.parse(execution.responseBody);
-      
-      if (execution.responseStatusCode !== 200) {
-        throw new Error(response.error);
-      }
-
-      await this.account.createSession({
-        userId: response.userId,
-        secret: response.secret
+      const response = await fetch(environment.functionUrl + '/auth', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-appwrite-key': environment.apiKey
+        },
+        body: JSON.stringify({ email, address, signature, message })
       });
-      
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+
+      await this.account.createSession(data);
       const user = await this.account.get();
+
       this.authState.next({ loading: false, error: null, user });
 
     } catch (error: any) {
@@ -683,18 +646,6 @@ export class Web3AuthService {
     }
   }
 }
-```
-
-### Environment Configuration
-
-```typescript
-// src/environments/environment.ts
-export const environment = {
-  production: false,
-  appwriteEndpoint: 'https://cloud.appwrite.io/v1',
-  appwriteProject: 'your-project-id',
-  functionId: 'your-function-id'
-};
 ```
 
 ---
@@ -779,41 +730,32 @@ export async function signMessage(message: string, address: string): Promise<str
 
 ## Environment Variables
 
-### Next.js / React (.env.local)
-```env
-NEXT_PUBLIC_APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1
-NEXT_PUBLIC_APPWRITE_PROJECT=your-project-id
-NEXT_PUBLIC_FUNCTION_ID=your-function-id
-```
+Create a `.env` file:
 
-### Vue / Vite (.env)
 ```env
+# Appwrite Configuration
 VITE_APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1
 VITE_APPWRITE_PROJECT=your-project-id
-VITE_FUNCTION_ID=your-function-id
-```
 
-### Angular (environment.ts)
-```typescript
-export const environment = {
-  appwriteEndpoint: 'https://cloud.appwrite.io/v1',
-  appwriteProject: 'your-project-id',
-  functionId: 'your-function-id'
-};
+# Function Configuration
+VITE_FUNCTION_URL=https://cloud.appwrite.io/v1/functions/web3-auth/executions
+VITE_API_KEY=your-api-key
+
+# For Next.js, use NEXT_PUBLIC_ prefix
+# For Create React App, use REACT_APP_ prefix
 ```
 
 ---
 
 ## Best Practices
 
-1. **No API Keys in Client** ✅ - Function handles API key internally
-2. **Use SDK Methods** ✅ - Leverage `Functions.createExecution()`
-3. **Validate Email Format** ✅ - Before sending to function
-4. **Handle Wallet Not Installed** ✅ - Provide MetaMask install link
-5. **Show Loading States** ✅ - Signing can take time
-6. **Error Handling** ✅ - Display user-friendly messages
-7. **Wallet Switching** ✅ - Handle account changes
-8. **Network Validation** ✅ - Check correct blockchain network
+1. **Never hardcode API keys** - Use environment variables
+2. **Validate email format** - Before sending to function
+3. **Handle wallet not installed** - Provide MetaMask install link
+4. **Show loading states** - Signing can take time
+5. **Error handling** - Display user-friendly messages
+6. **Wallet switching** - Handle account changes
+7. **Network validation** - Check correct blockchain network
 
 ---
 
@@ -822,18 +764,13 @@ export const environment = {
 **Problem**: User rejects signature
 - Show clear message: "You must sign the message to authenticate"
 
-**Problem**: Function execution fails
-- Check function ID is correct
-- Verify function is deployed and active
-- Check execution logs in Appwrite Console
+**Problem**: Network error
+- Check function URL is correct
+- Verify API key has permissions
 
 **Problem**: Session not persisting
 - Check cookies are enabled
 - Verify Appwrite endpoint matches
-
-**Problem**: API key error
-- Ensure `APPWRITE_API_KEY` is set in function environment variables
-- Verify API key has required permissions (users.read, users.write, sessions.write)
 
 ---
 

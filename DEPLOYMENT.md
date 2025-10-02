@@ -157,18 +157,26 @@ zip -r web3-auth.zip dist/ node_modules/ package.json package-lock.json
 
 ### Environment Variables
 
-No manual environment variables needed! Appwrite automatically provides:
-- `APPWRITE_FUNCTION_API_ENDPOINT`
-- `APPWRITE_FUNCTION_PROJECT_ID`
+Appwrite automatically provides these:
+- `APPWRITE_FUNCTION_API_ENDPOINT` - Auto-set by Appwrite
+- `APPWRITE_FUNCTION_PROJECT_ID` - Auto-set by Appwrite
 
-### API Key
+**You must configure**:
+- `APPWRITE_API_KEY` - Your API key (set in function settings)
 
-Create an API key with these scopes:
-- `users.read` - Query users
-- `users.write` - Create users and update preferences
-- `sessions.write` - Create tokens
+### API Key Configuration
 
-**Important**: Store this key securely on the client side (environment variables, not hardcoded).
+1. Create an API key in Appwrite Console with these scopes:
+   - `users.read` - Query users
+   - `users.write` - Create users and update preferences
+   - `sessions.write` - Create tokens
+
+2. Add it to your function's environment variables:
+   - Key: `APPWRITE_API_KEY`
+   - Value: `your-api-key-here`
+   - This keeps the key secure server-side only
+
+**Security**: The API key is stored in the function environment, never exposed to clients.
 
 ## Testing
 
@@ -195,22 +203,37 @@ Expected response:
 
 ### Test Authentication (requires valid signature)
 
+Using curl with Appwrite Functions API:
+
 ```bash
 curl -X POST \
   https://YOUR_ENDPOINT/v1/functions/web3-auth/executions \
   -H "X-Appwrite-Project: YOUR_PROJECT_ID" \
   -H "Content-Type: application/json" \
-  -H "x-appwrite-key: YOUR_API_KEY" \
   -d '{
-    "path": "/auth",
-    "method": "POST",
-    "body": {
-      "email": "test@example.com",
-      "address": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
-      "signature": "0x...",
-      "message": "auth-1234567890"
-    }
+    "body": "{\"email\":\"test@example.com\",\"address\":\"0x742d35Cc...\",\"signature\":\"0x...\",\"message\":\"auth-1234567890\"}",
+    "async": false
   }'
+```
+
+Or using the Appwrite SDK (recommended):
+
+```javascript
+import { Client, Functions } from 'appwrite';
+
+const client = new Client()
+  .setEndpoint('YOUR_ENDPOINT')
+  .setProject('YOUR_PROJECT_ID');
+
+const functions = new Functions(client);
+
+const execution = await functions.createExecution(
+  'web3-auth',
+  JSON.stringify({ email, address, signature, message }),
+  false
+);
+
+console.log(JSON.parse(execution.responseBody));
 ```
 
 ## Monitoring

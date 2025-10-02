@@ -75,48 +75,177 @@ appwrite deploy function
 ### Environment Variables
 
 The function automatically uses these Appwrite-provided variables:
-- `APPWRITE_FUNCTION_API_ENDPOINT` - API endpoint (auto-set)
-- `APPWRITE_FUNCTION_PROJECT_ID` - Project ID (auto-set)
-
-### Required Headers
-
-All requests must include:
-- `Content-Type: application/json`
-- `x-appwrite-key: YOUR_API_KEY` - Server API key with user creation permissions
+- `APPWRITE_FUNCTION_API_ENDPOINT` - API endpoint (auto-set by Appwrite)
+- `APPWRITE_FUNCTION_PROJECT_ID` - Project ID (auto-set by Appwrite)
+- `APPWRITE_API_KEY` - **Set this in function settings** (your API key with user permissions)
 
 ### API Key Permissions
 
-Your API key needs:
+Create an API key in your Appwrite console with these scopes:
 - ✅ `users.read` - Query users by email
 - ✅ `users.write` - Create users and update preferences
 - ✅ `sessions.write` - Create custom tokens
 
+Then set it as the `APPWRITE_API_KEY` environment variable in your function settings.
+
+### Function Execution Permissions
+
+In your function settings, configure execution permissions:
+- **Execute Access**: `Any` (allows unauthenticated users to call for login)
+- Or configure specific roles as needed
+
+## 📡 Usage with Appwrite SDK
+
+### Method 1: Using Functions SDK (Recommended)
+
+This is the recommended approach as it handles authentication and security automatically.
+
+```typescript
+import { Client, Functions } from 'appwrite';
+
+// Initialize Appwrite client
+const client = new Client()
+  .setEndpoint('https://cloud.appwrite.io/v1')
+  .setProject('your-project-id');
+
+const functions = new Functions(client);
+
+// Call the function
+async function authenticateWithWallet(email, address, signature, message) {
+  try {
+    const execution = await functions.createExecution(
+      'YOUR_FUNCTION_ID', // Your deployed function ID
+      JSON.stringify({ email, address, signature, message }),
+      false, // async = false for immediate response
+      '/', // path (optional, defaults to /)
+      'POST' // method
+    );
+
+    // Parse the response
+    const response = JSON.parse(execution.responseBody);
+    
+    if (execution.responseStatusCode === 200) {
+      return response; // { userId, secret }
+    } else {
+      throw new Error(response.error || 'Authentication failed');
+    }
+  } catch (error) {
+    console.error('Function execution error:', error);
+    throw error;
+  }
+}
+```
+
+### Method 2: Direct HTTP Call (Alternative)
+
+If you need more control, you can call the function directly via HTTP:
+
+```typescript
+const response = await fetch(
+  `https://cloud.appwrite.io/v1/functions/${functionId}/executions`,
+  {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Appwrite-Project': 'your-project-id'
+    },
+    body: JSON.stringify({
+      path: '/auth',
+      method: 'POST',
+      body: JSON.stringify({ email, address, signature, message })
+    })
+  }
+);
+
+const execution = await response.json();
+const result = JSON.parse(execution.responseBody);
+```
+
+## 🚀 Complete Authentication Flow
+
+Here's a complete example using the Appwrite Functions SDK:
+
+```typescript
+import { Client, Account, Functions } from 'appwrite';
+
+// 1. Initialize Appwrite
+const client = new Client()
+  .setEndpoint('https://cloud.appwrite.io/v1')
+  .setProject('your-project-id');
+
+const account = new Account(client);
+const functions = new Functions(client);
+
+// 2. Connect wallet and authenticate
+async function authenticateWithWallet(email: string) {
+  try {
+    // Check for MetaMask
+    if (!window.ethereum) {
+      throw new Error('MetaMask not installed');
+    }
+
+    // Request wallet connection
+    const accounts = await window.ethereum.request({ 
+      method: 'eth_requestAccounts' 
+    });
+    const address = accounts[0];
+
+    // Generate authentication message
+    const timestamp = Date.now();
+    const message = `auth-${timestamp}`;
+    const fullMessage = `Sign this message to authenticate: ${message}`;
+
+    // Request signature from wallet
+    const signature = await window.ethereum.request({
+      method: 'personal_sign',
+      params: [fullMessage, address]
+    });
+
+    // Call Appwrite Function
+    const execution = await functions.createExecution(
+      'YOUR_FUNCTION_ID',
+      JSON.stringify({ email, address, signature, message }),
+      false // Get immediate response
+    );
+
+    // Parse response
+    const response = JSON.parse(execution.responseBody);
+    
+    if (execution.responseStatusCode !== 200) {
+      throw new Error(response.error || 'Authentication failed');
+    }
+
+    // Create session with returned token
+    await account.createSession({
+      userId: response.userId,
+      secret: response.secret
+    });
+
+    console.log('✅ Authenticated successfully!');
+    return response;
+
+  } catch (error) {
+    console.error('Authentication error:', error);
+    throw error;
+  }
+}
+```
+
 ## 📡 API Endpoints
 
-### POST /auth (or / or /authenticate)
+### POST / (or /auth or /authenticate)
 
 Authenticate with Web3 wallet signature.
 
-**Request:**
-```bash
-curl -X POST https://your-appwrite-instance/functions/[function-id]/execution \
-  -H "Content-Type: application/json" \
-  -H "x-appwrite-key: YOUR_API_KEY" \
-  -d '{
-    "email": "user@example.com",
-    "address": "0xABC123...",
-    "signature": "0x456DEF...",
-    "message": "auth-1234567890"
-  }'
-```
-
 **Request Body:**
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `email` | string | ✅ | User's email address |
-| `address` | string | ✅ | Ethereum wallet address (0x...) |
-| `signature` | string | ✅ | Signed message from wallet |
-| `message` | string | ✅ | Original message (e.g., `auth-1234567890`) |
+```json
+{
+  "email": "user@example.com",
+  "address": "0xABC123...",
+  "signature": "0x456DEF...",
+  "message": "auth-1234567890"
+}
+```
 
 **Success Response (200):**
 ```json
@@ -131,7 +260,7 @@ curl -X POST https://your-appwrite-instance/functions/[function-id]/execution \
   ```json
   { "error": "Missing required fields" }
   ```
-- **401** - Invalid signature or missing API key
+- **401** - Invalid signature
   ```json
   { "error": "Invalid signature" }
   ```
@@ -157,151 +286,6 @@ Health check endpoint.
 }
 ```
 
-## 🚀 Usage Example
-
-### Complete Frontend Integration
-
-```typescript
-// 1. Import Appwrite SDK
-import { Client, Account } from 'appwrite';
-
-// 2. Initialize Appwrite
-const client = new Client()
-  .setEndpoint('https://your-instance.appwrite.io/v1')
-  .setProject('your-project-id');
-
-const account = new Account(client);
-
-// 3. Connect wallet and request signature
-async function authenticateWithWallet(email: string) {
-  // Check for MetaMask
-  if (!window.ethereum) {
-    throw new Error('MetaMask not found');
-  }
-
-  // Request wallet connection
-  const accounts = await window.ethereum.request({ 
-    method: 'eth_requestAccounts' 
-  });
-  const address = accounts[0];
-
-  // Generate message
-  const timestamp = Date.now();
-  const message = `auth-${timestamp}`;
-  const fullMessage = `Sign this message to authenticate: ${message}`;
-
-  // Request signature
-  const signature = await window.ethereum.request({
-    method: 'personal_sign',
-    params: [fullMessage, address]
-  });
-
-  // 4. Call Appwrite Function
-  const response = await fetch('YOUR_FUNCTION_URL/auth', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-appwrite-key': 'YOUR_API_KEY' // ⚠️ Use env variable, never hardcode!
-    },
-    body: JSON.stringify({ email, address, signature, message })
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Authentication failed');
-  }
-
-  const { userId, secret } = await response.json();
-
-  // 5. Create Appwrite session
-  await account.createSession({ userId, secret });
-
-  console.log('✅ Authenticated successfully!');
-}
-
-// Usage
-authenticateWithWallet('user@example.com');
-```
-
-### Vue.js Example
-
-```vue
-<template>
-  <div>
-    <input v-model="email" placeholder="Email" />
-    <button @click="connect" :disabled="loading">
-      {{ loading ? 'Connecting...' : 'Connect Wallet' }}
-    </button>
-    <p v-if="error" class="error">{{ error }}</p>
-  </div>
-</template>
-
-<script>
-import { Client, Account } from 'appwrite';
-
-export default {
-  data() {
-    return {
-      email: '',
-      loading: false,
-      error: null
-    };
-  },
-  methods: {
-    async connect() {
-      this.loading = true;
-      this.error = null;
-
-      try {
-        const accounts = await window.ethereum.request({ 
-          method: 'eth_requestAccounts' 
-        });
-        const address = accounts[0];
-        
-        const message = `auth-${Date.now()}`;
-        const fullMessage = `Sign this message to authenticate: ${message}`;
-        
-        const signature = await window.ethereum.request({
-          method: 'personal_sign',
-          params: [fullMessage, address]
-        });
-
-        const response = await fetch(process.env.VUE_APP_FUNCTION_URL + '/auth', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-appwrite-key': process.env.VUE_APP_APPWRITE_KEY
-          },
-          body: JSON.stringify({ 
-            email: this.email, 
-            address, 
-            signature, 
-            message 
-          })
-        });
-
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error);
-
-        const client = new Client()
-          .setEndpoint(process.env.VUE_APP_APPWRITE_ENDPOINT)
-          .setProject(process.env.VUE_APP_APPWRITE_PROJECT);
-        
-        const account = new Account(client);
-        await account.createSession(data);
-
-        this.$router.push('/dashboard');
-      } catch (e) {
-        this.error = e.message;
-      } finally {
-        this.loading = false;
-      }
-    }
-  }
-};
-</script>
-```
-
 ## 🔒 Security Features
 
 ### 1. Cryptographic Signature Verification
@@ -318,15 +302,14 @@ export default {
 - Users with passkey auth must link wallets via passkey
 - Prevents bypassing 2FA/passkey security
 
-### 4. API Key Protection
-- API key required via `x-appwrite-key` header
-- Never exposed to frontend (use environment variables)
-- Server-side validation only
+### 4. Server-Side Validation
+- API key stored in function environment (never exposed)
+- All verification happens server-side
+- No client-side security dependencies
 
 ### 5. Message Format Validation
 - Expected format: `Sign this message to authenticate: auth-{timestamp}`
 - Timestamp provides uniqueness (basic replay protection)
-- Can be enhanced with expiration checks
 
 ## 🛠️ Development
 
@@ -362,102 +345,32 @@ web3/
 └── README.md
 ```
 
-### Code Flow
-
-```
-Request → main.ts (routing)
-           ↓
-       auth-handler.ts (orchestration)
-           ↓
-       ├─ web3-utils.ts (verify signature)
-       └─ appwrite-helpers.ts (user management)
-           ↓
-       Response (userId + secret)
-```
-
-## 📊 Testing
-
-### Manual Testing with curl
-
-```bash
-# Health check
-curl https://your-function-url/ping
-
-# Authentication
-curl -X POST https://your-function-url/auth \
-  -H "Content-Type: application/json" \
-  -H "x-appwrite-key: YOUR_API_KEY" \
-  -d '{
-    "email": "test@example.com",
-    "address": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
-    "signature": "0x...",
-    "message": "auth-1234567890"
-  }'
-```
-
-### Expected Behavior
-
-✅ **Valid signature** → Returns `{ userId, secret }`  
-❌ **Invalid signature** → Returns `{ error: "Invalid signature" }` (401)  
-❌ **Missing email** → Returns `{ error: "Missing required fields" }` (400)  
-❌ **Wallet conflict** → Returns `{ error: "Email already bound to different wallet" }` (403)
-
 ## 🆚 Comparison: Next.js vs Appwrite Function
 
 | Aspect | Next.js API Route | Appwrite Function |
 |--------|-------------------|-------------------|
-| **File** | `/app/api/custom-token/route.ts` | `/src/main.ts` |
 | **Framework** | Next.js only | Any framework |
-| **Request** | `Request` object | `req` context object |
+| **Request** | `Request` object | Function context |
 | **Response** | `NextResponse` | `res.json()` |
-| **Env Vars** | `NEXT_PUBLIC_*` | `APPWRITE_FUNCTION_*` |
-| **API Key** | `process.env.APPWRITE_API` | `req.headers['x-appwrite-key']` |
-| **Routing** | File-based | Manual (in code) |
+| **API Key** | `process.env.APPWRITE_API` | `APPWRITE_API_KEY` env var |
+| **Calling** | `fetch('/api/custom-token')` | Appwrite Functions SDK |
 | **Build** | Next.js bundler | TypeScript compiler |
 | **Deploy** | Vercel/hosting | Appwrite Functions |
+| **Security** | API key in server env | API key in function env |
 
 **Core logic is 100% identical** - only the request/response handling differs.
-
-## 🚧 Limitations & Future Enhancements
-
-### Current Limitations
-- Single chain (Ethereum) - no multi-chain support yet
-- Basic replay protection (timestamp only)
-- No message expiration enforcement
-- No rate limiting
-
-### Potential Enhancements
-1. **Multi-chain support**: Polygon, BSC, Arbitrum, etc.
-2. **ENS integration**: Resolve ENS names to addresses
-3. **NFT-based auth**: Require specific NFT ownership
-4. **Stronger replay protection**: HMAC, nonce validation
-5. **Rate limiting**: Prevent abuse
-6. **Audit logging**: Track authentication attempts
-7. **Hardware wallet support**: Ledger, Trezor compatibility
 
 ## 📄 License
 
 This project is part of the Appwrite Web3 integration and follows the same license as the main repository.
-
-## 🤝 Contributing
-
-Contributions welcome! Please ensure:
-- TypeScript types are complete
-- Code follows existing style
-- Security best practices maintained
-- Documentation updated
 
 ## 📞 Support
 
 - **Issues**: Open a GitHub issue
 - **Questions**: Use GitHub Discussions
 - **Security**: Report privately via email
-
-## 🎉 Credits
-
-Developed as part of the Appwrite Web3 authentication integration project. This function enables any frontend framework to implement secure wallet authentication without backend infrastructure.
+- **Documentation**: Check CLIENT_EXAMPLES.md for framework-specific examples
 
 ---
 
 **Made with ❤️ for the Web3 community**
-
