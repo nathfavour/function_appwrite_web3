@@ -18,10 +18,6 @@
  * POST /auth (or / or /authenticate)
  *   Authenticate with Web3 wallet signature
  *   
- *   Request Headers:
- *     Content-Type: application/json
- *     x-appwrite-key: YOUR_API_KEY
- *   
  *   Request Body:
  *     {
  *       "email": "user@example.com",
@@ -38,9 +34,9 @@
  *   
  *   Error Responses:
  *     400: Missing required fields / Invalid JSON
- *     401: Invalid signature / Missing API key
+ *     401: Invalid signature
  *     403: Email bound to different wallet / Passkey conflict
- *     500: Server error
+ *     500: Server error / Configuration error
  * 
  * GET /ping (or /health)
  *   Health check endpoint
@@ -66,17 +62,20 @@
  *   params: [fullMessage, address]
  * });
  * 
- * // 2. Call this function
- * const response = await fetch('YOUR_FUNCTION_URL/auth', {
- *   method: 'POST',
- *   headers: {
- *     'Content-Type': 'application/json',
- *     'x-appwrite-key': 'YOUR_API_KEY'
- *   },
- *   body: JSON.stringify({ email, address, signature, message })
- * });
+ * // 2. Call this function using Appwrite SDK
+ * import { Client, Functions } from 'appwrite';
+ * const client = new Client()
+ *   .setEndpoint('YOUR_ENDPOINT')
+ *   .setProject('YOUR_PROJECT');
+ * const functions = new Functions(client);
  * 
- * const { userId, secret } = await response.json();
+ * const execution = await functions.createExecution(
+ *   'YOUR_FUNCTION_ID',
+ *   JSON.stringify({ email, address, signature, message }),
+ *   false // async = false for immediate response
+ * );
+ * 
+ * const { userId, secret } = JSON.parse(execution.responseBody);
  * 
  * // 3. Create Appwrite session
  * import { Client, Account } from 'appwrite';
@@ -145,10 +144,6 @@ export default async (context: AppwriteFunctionContext) => {
         endpoints: {
           'POST /auth': {
             description: 'Authenticate with Web3 wallet signature',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-appwrite-key': 'string (required) - Your Appwrite API key'
-            },
             body: {
               email: 'string (required) - User email address',
               address: 'string (required) - Ethereum wallet address (0x...)',
@@ -168,7 +163,7 @@ export default async (context: AppwriteFunctionContext) => {
                 body: { error: 'string - Error description' }
               },
               '401': {
-                description: 'Unauthorized - invalid signature or missing API key',
+                description: 'Unauthorized - invalid signature',
                 body: { error: 'string - Error description' }
               },
               '403': {
@@ -193,11 +188,12 @@ export default async (context: AppwriteFunctionContext) => {
         documentation: 
           'This function verifies Web3 wallet signatures and creates Appwrite user sessions. ' +
           'It enables frontend-only frameworks to implement wallet authentication without backend infrastructure. ' +
-          'The signature verification uses ethers.js to cryptographically prove wallet ownership.',
+          'The signature verification uses ethers.js to cryptographically prove wallet ownership. ' +
+          'Use the Appwrite Functions SDK to call this function from your client application.',
         security: 
-          'Requires x-appwrite-key header with a valid API key. ' +
-          'The API key should have permissions to create users and tokens. ' +
-          'Never expose the API key in frontend code - use environment variables or secure configuration.'
+          'This function uses the API key configured in the function environment variables. ' +
+          'No need to pass API keys from the client - authentication is handled securely server-side. ' +
+          'The function is called using Appwrite\'s Functions SDK with proper user session context.'
       };
       
       return res.json(documentation, 200);

@@ -54,9 +54,9 @@ import type {
  * 
  * Error responses:
  * - 400: Missing required fields or invalid JSON
- * - 401: Invalid signature or missing API key
+ * - 401: Invalid signature
  * - 403: Email bound to different wallet or passkey conflict
- * - 500: Server error
+ * - 500: Server error or configuration error
  * 
  * @param context - Appwrite Function context
  */
@@ -121,18 +121,18 @@ export async function handleAuthentication(
     log('✓ Signature verified successfully');
 
     // ========================================================================
-    // Step 3: Get API key and initialize Appwrite client
+    // Step 3: Initialize Appwrite client with function's API key
     // ========================================================================
     
-    // API key is passed via request header for security
-    // (not exposed to frontend)
-    const apiKey = req.headers['x-appwrite-key'];
+    // Use the API key from environment (automatically provided by Appwrite)
+    // This is more secure than passing API key from client
+    const apiKey = process.env.APPWRITE_API_KEY;
     if (!apiKey) {
-      logError('API key missing from request headers');
+      logError('Function API key not configured in environment');
       const errorResponse: ErrorResponse = { 
-        error: 'API key required' 
+        error: 'Server configuration error' 
       };
-      return res.json(errorResponse, 401);
+      return res.json(errorResponse, 500);
     }
 
     // Create Appwrite client with API key
