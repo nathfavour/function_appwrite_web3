@@ -78,7 +78,6 @@ export async function findOrCreateUserWithWallet(
 ): Promise<string> {
   try {
     // Check if user exists by email
-    // Note: Query.equal expects an array for the value parameter in some SDK versions
     const existingUsers = await users.list([Query.equal('email', [email])]);
 
     // Check if we found any users
@@ -91,9 +90,6 @@ export async function findOrCreateUserWithWallet(
       const hasPasskey = Boolean(prefs.passkey_credentials);
 
       // Security Check 1: Passkey Conflict
-      // If account has passkey authentication but no wallet linked,
-      // require the user to sign in with passkey first to link wallet.
-      // This prevents wallet-based takeover of passkey accounts.
       if (hasPasskey && !existingWallet) {
         throw new Error(
           'Account already connected with passkey. Sign in with passkey to link wallet.'
@@ -101,14 +97,11 @@ export async function findOrCreateUserWithWallet(
       }
 
       // Security Check 2: Wallet Conflict
-      // If email is already bound to a different wallet, reject the request.
-      // This enforces one wallet per email and prevents account hijacking.
       if (existingWallet && existingWallet !== walletAddress) {
         throw new Error('Email already bound to a different wallet');
       }
 
       // First-time wallet binding
-      // If the user exists but has no wallet linked, bind it now
       if (!existingWallet) {
         await users.updatePrefs(existingUserId, {
           ...prefs,
@@ -117,20 +110,21 @@ export async function findOrCreateUserWithWallet(
       }
 
       return existingUserId;
-    } else {
-      // User doesn't exist - create new user and bind wallet
-      const userId = ID.unique();
-      const created = await users.create({
-        userId,
-        email,
-      });
-      const newUserId = (created as any).$id || userId;
-
-      // Bind wallet to the newly created user
-      await users.updatePrefs(newUserId, { walletEth: walletAddress });
-
-      return newUserId;
     }
+    
+    // User doesn't exist - create new user and bind wallet
+    const userId = ID.unique();
+    const created = await users.create({
+      userId,
+      email,
+    });
+    const newUserId = (created as any).$id || userId;
+
+    // Bind wallet to the newly created user
+    await users.updatePrefs(newUserId, { walletEth: walletAddress });
+
+    return newUserId;
+    
   } catch (error: any) {
     // Re-throw our validation errors (passkey conflict, wallet conflict)
     if (
@@ -140,27 +134,45 @@ export async function findOrCreateUserWithWallet(
       throw error;
     }
 
-    // For other errors (network issues, API errors, etc.),
-    // attempt to create a new user as a fallback
-    // This ensures the authentication flow can complete even if
-    // the user lookup fails for non-security reasons
-    try {
-      const userId = ID.unique();
-      const created = await users.create({ userId, email });
-      const newUserId = (created as any).$id || userId;
-
-      // Try to bind wallet, but don't fail if it doesn't work
+    // Check if error is "user already exists"
+    // This can happen in race conditions or if user was created between check and create
+    if (
+      error.message.includes('already exists') ||
+      error.code === 409 ||
+      error.type === 'user_already_exists'
+    ) {
+      // User exists, try to fetch and bind wallet
       try {
-        await users.updatePrefs(newUserId, { walletEth: walletAddress });
-      } catch {
-        // Ignore preference update errors in fallback path
-      }
+        const existingUsers = await users.list([Query.equal('email', [email])]);
+        
+        if ((existingUsers as any).total > 0 && (existingUsers as any).users?.length > 0) {
+          const existing = (existingUsers as any).users[0];
+          const existingUserId = existing.$id;
+          const prefs = (existing.prefs || {}) as UserPrefs;
+          const existingWallet = prefs.walletEth?.toLowerCase();
 
-      return newUserId;
-    } catch (createError: any) {
-      // If we can't create a user at all, throw the original error
-      throw new Error(`Failed to create or find user: ${createError.message}`);
+          // Check wallet conflict
+          if (existingWallet && existingWallet !== walletAddress) {
+            throw new Error('Email already bound to a different wallet');
+          }
+
+          // Bind wallet if not already bound
+          if (!existingWallet) {
+            await users.updatePrefs(existingUserId, {
+              ...prefs,
+              walletEth: walletAddress,
+            });
+          }
+
+          return existingUserId;
+        }
+      } catch (retryError: any) {
+        throw new Error(`Failed to bind wallet to existing user: ${retryError.message}`);
+      }
     }
+
+    // For any other error, throw with context
+    throw new Error(`Failed to create or find user: ${error.message}`);
   }
 }
 
