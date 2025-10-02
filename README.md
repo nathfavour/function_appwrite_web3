@@ -1,6 +1,6 @@
 # 🔐 Web3 Wallet Authentication - Appwrite Function
 
-A production-ready Appwrite Function that enables **Web3 wallet authentication** (MetaMask, WalletConnect, etc.) for any frontend framework. This function replicates the exact functionality of a Next.js API route, making wallet authentication accessible to frameworks without built-in API capabilities (Vue, Svelte, vanilla JS, etc.).
+A production-ready Appwrite Function that enables **Web3 wallet authentication** (MetaMask, WalletConnect, etc.) for any frontend framework. This function replicates the exact functionality of a Next.js API route, making wallet authentication accessible to frameworks without built-in API capabilities (Vue, Svelte, vanilla JS, etc.)...
 
 ## 🎯 Purpose
 
