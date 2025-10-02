@@ -78,6 +78,7 @@ The function automatically uses these Appwrite-provided variables:
 - `APPWRITE_FUNCTION_API_ENDPOINT` - API endpoint (auto-set by Appwrite)
 - `APPWRITE_FUNCTION_PROJECT_ID` - Project ID (auto-set by Appwrite)
 - `APPWRITE_API_KEY` - **Set this in function settings** (your API key with user permissions)
+(api wasn't auto set)
 
 ### API Key Permissions
 
