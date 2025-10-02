@@ -78,7 +78,7 @@ export async function findOrCreateUserWithWallet(
 ): Promise<string> {
   try {
     // Check if user exists by email
-    const existingUsers = await users.list([Query.equal('email', [email])]);
+    const existingUsers = await users.list([Query.equal('email', email)]);
 
     // Check if we found any users
     if ((existingUsers as any).total > 0 && (existingUsers as any).users?.length > 0) {
@@ -143,7 +143,7 @@ export async function findOrCreateUserWithWallet(
     ) {
       // User exists, try to fetch and bind wallet
       try {
-        const existingUsers = await users.list([Query.equal('email', [email])]);
+        const existingUsers = await users.list([Query.equal('email', email)]);
         
         if ((existingUsers as any).total > 0 && (existingUsers as any).users?.length > 0) {
           const existing = (existingUsers as any).users[0];
