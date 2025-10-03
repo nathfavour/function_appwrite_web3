@@ -365,12 +365,24 @@ web3/
 
 This project is part of the Appwrite Web3 integration and follows the same license as the main repository.
 
+## 📚 Documentation
+
+### Framework-Specific Guides
+
+- **[USAGE_NEXT.md](./USAGE_NEXT.md)** - Complete Next.js integration guide (App Router, Pages Router, Server Components, Middleware)
+- **[USAGE_REACT.md](./USAGE_REACT.md)** - React integration guide with hooks and context patterns
+- **[CLIENT_EXAMPLES.md](./CLIENT_EXAMPLES.md)** - Examples for Vue, Svelte, Angular, and vanilla JavaScript
+
+### General Documentation
+
+- **[DEPLOYMENT.md](./DEPLOYMENT.md)** - Deployment instructions
+- **[SDK_MIGRATION_GUIDE.md](./SDK_MIGRATION_GUIDE.md)** - Migration guide for SDK updates
+
 ## 📞 Support
 
 - **Issues**: Open a GitHub issue
 - **Questions**: Use GitHub Discussions
 - **Security**: Report privately via email
-- **Documentation**: Check CLIENT_EXAMPLES.md for framework-specific examples
 
 ---
 
