@@ -124,9 +124,9 @@ export async function handleAuthentication(
     // Step 3: Initialize Appwrite client with function's API key
     // ========================================================================
     
-    // Use the API key from environment (automatically provided by Appwrite)
-    // This is more secure than passing API key from client
-    const apiKey = process.env.APPWRITE_API_KEY;
+    // Use the built-in API key from Appwrite (APPWRITE_FUNCTION_API_KEY)
+    // Falls back to legacy APPWRITE_API_KEY for backward compatibility
+    const apiKey = process.env.APPWRITE_FUNCTION_API_KEY || process.env.APPWRITE_API_KEY;
     if (!apiKey) {
       logError('Function API key not configured in environment');
       const errorResponse: ErrorResponse = { 

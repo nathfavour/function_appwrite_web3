@@ -77,17 +77,16 @@ appwrite deploy function
 The function automatically uses these Appwrite-provided variables:
 - `APPWRITE_FUNCTION_API_ENDPOINT` - API endpoint (auto-set by Appwrite)
 - `APPWRITE_FUNCTION_PROJECT_ID` - Project ID (auto-set by Appwrite)
-- `APPWRITE_API_KEY` - **Set this in function settings** (your API key with user permissions)
-(api wasn't auto set)
+- `APPWRITE_FUNCTION_API_KEY` - **Automatically generated API key** (auto-set by Appwrite)
 
-### API Key Permissions
+**No manual API key configuration required!** Appwrite automatically provides a built-in API key with appropriate permissions for functions.
 
-Create an API key in your Appwrite console with these scopes:
-- ✅ `users.read` - Query users by email
-- ✅ `users.write` - Create users and update preferences
-- ✅ `sessions.write` - Create custom tokens
+#### Legacy Support (Optional)
 
-Then set it as the `APPWRITE_API_KEY` environment variable in your function settings.
+For backward compatibility with existing deployments, the function also supports:
+- `APPWRITE_API_KEY` - Manual API key (legacy, optional)
+
+If you have an existing deployment with `APPWRITE_API_KEY` set, it will continue to work. New deployments automatically use the built-in `APPWRITE_FUNCTION_API_KEY`.
 
 ### Function Execution Permissions
 

@@ -18,8 +18,9 @@ import type { UserPrefs } from './types.js';
  * provided by the Appwrite runtime:
  * - APPWRITE_FUNCTION_API_ENDPOINT: The Appwrite API endpoint
  * - APPWRITE_FUNCTION_PROJECT_ID: The project ID
+ * - APPWRITE_FUNCTION_API_KEY: Built-in API key (automatically generated)
  * 
- * @param apiKey - The Appwrite API key (passed via x-appwrite-key header)
+ * @param apiKey - The Appwrite API key (built-in or legacy)
  * @returns Configured Appwrite client instance
  * @throws Error if environment variables are not configured
  * 

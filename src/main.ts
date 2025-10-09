@@ -191,8 +191,9 @@ export default async (context: AppwriteFunctionContext) => {
           'The signature verification uses ethers.js to cryptographically prove wallet ownership. ' +
           'Use the Appwrite Functions SDK to call this function from your client application.',
         security: 
-          'This function uses the API key configured in the function environment variables. ' +
-          'No need to pass API keys from the client - authentication is handled securely server-side. ' +
+          'This function uses the built-in API key automatically provided by Appwrite (APPWRITE_FUNCTION_API_KEY). ' +
+          'No manual API key configuration is required. For backward compatibility, legacy APPWRITE_API_KEY is also supported. ' +
+          'Authentication is handled securely server-side - no need to pass API keys from the client. ' +
           'The function is called using Appwrite\'s Functions SDK with proper user session context.'
       };
       
