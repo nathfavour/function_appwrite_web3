@@ -165,7 +165,8 @@ export async function handleAuthentication(
       // Determine appropriate HTTP status code based on error type
       const statusCode = 
         userError.message.includes('passkey') ||
-        userError.message.includes('different wallet')
+        userError.message.includes('different wallet') ||
+        userError.message.includes('Account already exists')
           ? 403  // Forbidden - security validation failed
           : 500; // Internal server error
       

@@ -96,7 +96,14 @@ export async function findOrCreateUserWithWallet(
         );
       }
 
-      // Security Check 2: Wallet Conflict
+      // Security Check 2: Email OTP Account Hijack Protection
+      // Prevent wallet authentication for accounts created via email OTP
+      // These accounts have neither wallet nor passkey credentials
+      if (!existingWallet && !hasPasskey) {
+        throw new Error('Account already exists');
+      }
+
+      // Security Check 3: Wallet Conflict
       if (existingWallet && existingWallet !== walletAddress) {
         throw new Error('Email already bound to a different wallet');
       }
@@ -126,10 +133,11 @@ export async function findOrCreateUserWithWallet(
     return newUserId;
     
   } catch (error: any) {
-    // Re-throw our validation errors (passkey conflict, wallet conflict)
+    // Re-throw our validation errors (passkey conflict, wallet conflict, email OTP protection)
     if (
       error.message.includes('passkey') ||
-      error.message.includes('different wallet')
+      error.message.includes('different wallet') ||
+      error.message.includes('Account already exists')
     ) {
       throw error;
     }
@@ -150,8 +158,21 @@ export async function findOrCreateUserWithWallet(
           const existingUserId = existing.$id;
           const prefs = (existing.prefs || {}) as UserPrefs;
           const existingWallet = prefs.walletEth?.toLowerCase();
+          const hasPasskey = Boolean(prefs.passkey_credentials);
 
-          // Check wallet conflict
+          // Security Check: Passkey Conflict
+          if (hasPasskey && !existingWallet) {
+            throw new Error(
+              'Account already connected with passkey. Sign in with passkey to link wallet.'
+            );
+          }
+
+          // Security Check: Email OTP Account Hijack Protection
+          if (!existingWallet && !hasPasskey) {
+            throw new Error('Account already exists');
+          }
+
+          // Security Check: Wallet Conflict
           if (existingWallet && existingWallet !== walletAddress) {
             throw new Error('Email already bound to a different wallet');
           }
