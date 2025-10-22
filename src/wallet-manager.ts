@@ -4,20 +4,11 @@
  * This module handles wallet connection and disconnection for existing authenticated accounts.
  * These are distinct from authentication flows - they're used in account settings to add/remove wallets.
  * 
- * Connection flow:
- * 1. User must be authenticated (have valid session)
- * 2. User presents a wallet signature
- * 3. Signature is verified
- * 4. Wallet is bound to the account
- * 5. No session creation happens
- * 
- * Disconnection flow:
- * 1. User must be authenticated (have valid session)
- * 2. Wallet is removed from account
- * 3. No signature verification needed
+ * Uses the same SDK initialization approach as the auth handler.
+ * The authenticated client context is used directly via the SDK.
  */
 
-import { Users } from 'node-appwrite';
+import { Account, Users, Client } from 'node-appwrite';
 import {
   verifySignature,
   normalizeEthAddress,
@@ -25,7 +16,6 @@ import {
 } from './web3-utils.js';
 import {
   createAppwriteClient,
-  createCustomToken,
 } from './appwrite-helpers.js';
 import type {
   AppwriteFunctionContext,
@@ -37,45 +27,10 @@ import type {
 } from './types.js';
 
 /**
- * Extracts user ID from the Appwrite authorization header
- * 
- * The authorization header contains the user's session token.
- * This allows us to identify which user is making the request.
- * 
- * @param authHeader - The Authorization header value
- * @returns User ID if valid session, null otherwise
- * 
- * @example
- * const userId = extractUserIdFromAuth('Bearer user_id.session_secret');
- */
-function extractUserIdFromAuth(authHeader?: string): string | null {
-  if (!authHeader) return null;
-  
-  try {
-    // Authorization header format: "Bearer user_id.session_secret"
-    const parts = authHeader.split(' ');
-    if (parts.length !== 2 || parts[0] !== 'Bearer') return null;
-    
-    const [userId] = parts[1].split('.');
-    return userId;
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Connects a wallet to an existing authenticated account
  * 
- * This function allows users to add a wallet to their existing account (e.g., from settings).
- * The user must be authenticated and the wallet signature must be valid.
- * 
- * Flow:
- * 1. Extract user ID from authorization header (must be authenticated)
- * 2. Parse and validate request body
- * 3. Verify wallet signature
- * 4. Check for wallet conflicts (not already bound to different account)
- * 5. Bind wallet to user's account
- * 6. Return success without creating a session
+ * Uses the same authentication context the client has.
+ * Follows the same registration flow: verify signature, then update user prefs.
  * 
  * @param context - Appwrite Function context
  */
@@ -86,24 +41,7 @@ export async function handleConnectWallet(
 
   try {
     // ========================================================================
-    // Step 1: Verify user is authenticated
-    // ========================================================================
-    
-    const authHeader = req.headers['authorization'] || req.headers['x-appwrite-user-id'];
-    const userId = extractUserIdFromAuth(authHeader as string);
-
-    if (!userId) {
-      log('No valid authentication provided');
-      const errorResponse: ErrorResponse = {
-        error: 'Authentication required. Please log in first.',
-      };
-      return res.json(errorResponse, 401);
-    }
-
-    log(`User ${userId} requesting wallet connection`);
-
-    // ========================================================================
-    // Step 2: Parse and validate request body
+    // Step 1: Parse and validate request body
     // ========================================================================
     
     let connectRequest: ConnectWalletRequest;
@@ -127,10 +65,10 @@ export async function handleConnectWallet(
       return res.json(errorResponse, 400);
     }
 
-    log(`Connecting wallet ${address} to user ${userId}`);
+    log(`Connecting wallet ${address}`);
 
     // ========================================================================
-    // Step 3: Verify wallet signature
+    // Step 2: Verify wallet signature (same as auth flow)
     // ========================================================================
     
     const expectedMessage = createSignableMessage(message);
@@ -153,7 +91,7 @@ export async function handleConnectWallet(
     log('✓ Signature verified successfully');
 
     // ========================================================================
-    // Step 4: Initialize Appwrite client
+    // Step 3: Initialize Appwrite client using SDK
     // ========================================================================
     
     const apiKey = process.env.APPWRITE_FUNCTION_API_KEY || process.env.APPWRITE_API_KEY;
@@ -166,7 +104,26 @@ export async function handleConnectWallet(
     }
 
     const client = createAppwriteClient(apiKey);
+    const account = new Account(client);
     const users = new Users(client);
+
+    // ========================================================================
+    // Step 4: Get the authenticated user from the client context
+    // ========================================================================
+    
+    let user: any;
+    try {
+      user = await account.get();
+    } catch (userError: any) {
+      logError(`Failed to get authenticated user: ${userError.message}`);
+      const errorResponse: ErrorResponse = {
+        error: 'Authentication required. Please log in first.',
+      };
+      return res.json(errorResponse, 401);
+    }
+
+    const userId = user.$id;
+    log(`User ${userId} connecting wallet ${address}`);
 
     // ========================================================================
     // Step 5: Normalize wallet address
@@ -179,36 +136,32 @@ export async function handleConnectWallet(
     // Step 6: Check for wallet conflicts
     // ========================================================================
     
+    const prefs = (user.prefs || {}) as UserPrefs;
+    const existingWallet = prefs.walletEth?.toLowerCase();
+
+    if (existingWallet && existingWallet === normalizedAddress) {
+      log('Wallet already connected to this account');
+      const response: ConnectWalletResponse = {
+        success: true,
+        userId,
+        message: 'Wallet is already connected to this account',
+      };
+      return res.json(response, 200);
+    }
+
+    if (existingWallet && existingWallet !== normalizedAddress) {
+      logError('User already has a connected wallet');
+      const errorResponse: ErrorResponse = {
+        error: 'Account already has a connected wallet. Disconnect the existing wallet first.',
+      };
+      return res.json(errorResponse, 403);
+    }
+
+    // ========================================================================
+    // Step 7: Bind wallet to account
+    // ========================================================================
+    
     try {
-      // Get current user's preferences
-      const user = await users.get(userId);
-      const prefs = (user.prefs || {}) as UserPrefs;
-      const existingWallet = prefs.walletEth?.toLowerCase();
-
-      if (existingWallet && existingWallet === normalizedAddress) {
-        // Wallet is already connected to this account
-        log('Wallet already connected to this account');
-        const response: ConnectWalletResponse = {
-          success: true,
-          userId,
-          message: 'Wallet is already connected to this account',
-        };
-        return res.json(response, 200);
-      }
-
-      if (existingWallet && existingWallet !== normalizedAddress) {
-        // Try to connect a different wallet to an account that already has one
-        logError('User already has a connected wallet');
-        const errorResponse: ErrorResponse = {
-          error: 'Account already has a connected wallet. Disconnect the existing wallet first.',
-        };
-        return res.json(errorResponse, 403);
-      }
-
-      // ========================================================================
-      // Step 7: Bind wallet to account
-      // ========================================================================
-      
       await users.updatePrefs(userId, {
         ...prefs,
         walletEth: normalizedAddress,
@@ -216,10 +169,6 @@ export async function handleConnectWallet(
 
       log(`✓ Wallet ${normalizedAddress} connected to user ${userId}`);
 
-      // ========================================================================
-      // Step 8: Return success response
-      // ========================================================================
-      
       const successResponse: ConnectWalletResponse = {
         success: true,
         userId,
@@ -228,10 +177,10 @@ export async function handleConnectWallet(
 
       return res.json(successResponse, 200);
       
-    } catch (userError: any) {
-      logError(`User operation error: ${userError.message}`);
+    } catch (updateError: any) {
+      logError(`Failed to update user preferences: ${updateError.message}`);
       const errorResponse: ErrorResponse = {
-        error: userError.message || 'Failed to connect wallet',
+        error: 'Failed to connect wallet',
       };
       return res.json(errorResponse, 500);
     }
@@ -248,15 +197,8 @@ export async function handleConnectWallet(
 /**
  * Disconnects a wallet from an existing authenticated account
  * 
- * This function allows users to remove a wallet from their account (e.g., from settings).
- * The user must be authenticated. No signature verification is needed.
- * 
- * Flow:
- * 1. Extract user ID from authorization header (must be authenticated)
- * 2. Get user's current preferences
- * 3. Remove wallet binding
- * 4. Update user preferences
- * 5. Return success
+ * Uses the same authentication context the client has.
+ * Simple: get authenticated user, remove wallet from prefs.
  * 
  * @param context - Appwrite Function context
  */
@@ -267,24 +209,7 @@ export async function handleDisconnectWallet(
 
   try {
     // ========================================================================
-    // Step 1: Verify user is authenticated
-    // ========================================================================
-    
-    const authHeader = req.headers['authorization'] || req.headers['x-appwrite-user-id'];
-    const userId = extractUserIdFromAuth(authHeader as string);
-
-    if (!userId) {
-      log('No valid authentication provided');
-      const errorResponse: ErrorResponse = {
-        error: 'Authentication required. Please log in first.',
-      };
-      return res.json(errorResponse, 401);
-    }
-
-    log(`User ${userId} requesting wallet disconnection`);
-
-    // ========================================================================
-    // Step 2: Initialize Appwrite client
+    // Step 1: Initialize Appwrite client using SDK
     // ========================================================================
     
     const apiKey = process.env.APPWRITE_FUNCTION_API_KEY || process.env.APPWRITE_API_KEY;
@@ -297,32 +222,49 @@ export async function handleDisconnectWallet(
     }
 
     const client = createAppwriteClient(apiKey);
+    const account = new Account(client);
     const users = new Users(client);
 
     // ========================================================================
-    // Step 3: Get user and remove wallet binding
+    // Step 2: Get the authenticated user from the client context
+    // ========================================================================
+    
+    let user: any;
+    try {
+      user = await account.get();
+    } catch (userError: any) {
+      logError(`Failed to get authenticated user: ${userError.message}`);
+      const errorResponse: ErrorResponse = {
+        error: 'Authentication required. Please log in first.',
+      };
+      return res.json(errorResponse, 401);
+    }
+
+    const userId = user.$id;
+    log(`User ${userId} requesting wallet disconnection`);
+
+    // ========================================================================
+    // Step 3: Get user preferences and remove wallet
+    // ========================================================================
+    
+    const prefs = (user.prefs || {}) as UserPrefs;
+    const hadWallet = Boolean(prefs.walletEth);
+
+    if (!hadWallet) {
+      log('No wallet connected to this account');
+      const response: DisconnectWalletResponse = {
+        success: true,
+        userId,
+        message: 'No wallet connected to this account',
+      };
+      return res.json(response, 200);
+    }
+
+    // ========================================================================
+    // Step 4: Update preferences to remove wallet
     // ========================================================================
     
     try {
-      const user = await users.get(userId);
-      const prefs = (user.prefs || {}) as UserPrefs;
-      const hadWallet = Boolean(prefs.walletEth);
-
-      if (!hadWallet) {
-        // No wallet connected, nothing to do
-        log('No wallet connected to this account');
-        const response: DisconnectWalletResponse = {
-          success: true,
-          userId,
-          message: 'No wallet connected to this account',
-        };
-        return res.json(response, 200);
-      }
-
-      // ========================================================================
-      // Step 4: Remove wallet from preferences
-      // ========================================================================
-      
       const updatedPrefs: UserPrefs = { ...prefs };
       delete updatedPrefs.walletEth;
 
@@ -330,10 +272,6 @@ export async function handleDisconnectWallet(
 
       log(`✓ Wallet disconnected from user ${userId}`);
 
-      // ========================================================================
-      // Step 5: Return success response
-      // ========================================================================
-      
       const successResponse: DisconnectWalletResponse = {
         success: true,
         userId,
@@ -342,10 +280,10 @@ export async function handleDisconnectWallet(
 
       return res.json(successResponse, 200);
       
-    } catch (userError: any) {
-      logError(`User operation error: ${userError.message}`);
+    } catch (updateError: any) {
+      logError(`Failed to update user preferences: ${updateError.message}`);
       const errorResponse: ErrorResponse = {
-        error: userError.message || 'Failed to disconnect wallet',
+        error: 'Failed to disconnect wallet',
       };
       return res.json(errorResponse, 500);
     }
