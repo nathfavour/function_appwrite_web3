@@ -1283,7 +1283,9 @@ export interface DisconnectWalletResponse {
 
 ### Important Notes
 
-- **Authentication Required**: Both `/connect-wallet` and `/disconnect-wallet` require an active user session. The function extracts the user ID from the Authorization header.
+- **Authentication Required**: Both `/connect-wallet` and `/disconnect-wallet` require an active user session. The client already has authenticated context - just call these endpoints normally with your session active.
+
+- **No Custom Headers**: Don't manually add Authorization headers. The Appwrite SDK handles session context automatically.
 
 - **One Wallet Per Account**: Each account can only have one connected wallet. To switch wallets, disconnect the old one first.
 
@@ -1291,7 +1293,7 @@ export interface DisconnectWalletResponse {
 
 - **Signature Format**: The signature must be valid for the wallet address. Invalid signatures will be rejected with a 401 status.
 
-- **No Session Creation**: Unlike `/auth`, these endpoints do NOT create a new session. They assume the user is already authenticated.
+- **No Session Creation**: Unlike `/auth`, these endpoints do NOT create a new session. They update prefs on the authenticated user's existing account.
 
 ---
 
