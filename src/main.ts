@@ -89,6 +89,7 @@
  */
 
 import { handleAuthentication } from './auth-handler.js';
+import { handleConnectWallet, handleDisconnectWallet } from './wallet-manager.js';
 import type { 
   AppwriteFunctionContext, 
   HealthResponse, 
@@ -143,7 +144,7 @@ export default async (context: AppwriteFunctionContext) => {
         version: '1.0.0',
         endpoints: {
           'POST /auth': {
-            description: 'Authenticate with Web3 wallet signature',
+            description: 'Authenticate with Web3 wallet signature (initial login)',
             body: {
               email: 'string (required) - User email address',
               address: 'string (required) - Ethereum wallet address (0x...)',
@@ -176,6 +177,64 @@ export default async (context: AppwriteFunctionContext) => {
               }
             }
           },
+          'POST /connect-wallet': {
+            description: 'Connect a wallet to an existing authenticated account (account settings)',
+            authentication: 'Required - User must be logged in with valid session',
+            body: {
+              address: 'string (required) - Ethereum wallet address (0x...)',
+              signature: 'string (required) - Signed message from wallet',
+              message: 'string (required) - Original message that was signed (e.g., auth-1234567890)',
+            },
+            responses: {
+              '200': {
+                description: 'Wallet connected successfully',
+                body: {
+                  success: 'boolean - true on success',
+                  userId: 'string - Appwrite user ID',
+                  message: 'string - Status message',
+                }
+              },
+              '400': {
+                description: 'Bad request - missing fields or invalid JSON',
+                body: { error: 'string - Error description' }
+              },
+              '401': {
+                description: 'Unauthorized - invalid signature or not authenticated',
+                body: { error: 'string - Error description' }
+              },
+              '403': {
+                description: 'Forbidden - account already has a wallet connected',
+                body: { error: 'string - Error description' }
+              },
+              '500': {
+                description: 'Internal server error',
+                body: { error: 'string - Error description' }
+              }
+            }
+          },
+          'POST /disconnect-wallet': {
+            description: 'Disconnect wallet from authenticated account (account settings)',
+            authentication: 'Required - User must be logged in with valid session',
+            body: '(empty - no request body needed)',
+            responses: {
+              '200': {
+                description: 'Wallet disconnected successfully',
+                body: {
+                  success: 'boolean - true on success',
+                  userId: 'string - Appwrite user ID',
+                  message: 'string - Status message',
+                }
+              },
+              '401': {
+                description: 'Unauthorized - not authenticated',
+                body: { error: 'string - Error description' }
+              },
+              '500': {
+                description: 'Internal server error',
+                body: { error: 'string - Error description' }
+              }
+            }
+          },
           'GET /ping': {
             description: 'Health check endpoint',
             response: {
@@ -186,18 +245,105 @@ export default async (context: AppwriteFunctionContext) => {
           },
         },
         documentation: 
-          'This function verifies Web3 wallet signatures and creates Appwrite user sessions. ' +
-          'It enables frontend-only frameworks to implement wallet authentication without backend infrastructure. ' +
+          'This function provides complete Web3 wallet management for Appwrite applications. ' +
+          'Primary endpoint POST /auth handles initial Web3 authentication and session creation. ' +
+          'POST /connect-wallet and POST /disconnect-wallet enable wallet management from account settings. ' +
           'The signature verification uses ethers.js to cryptographically prove wallet ownership. ' +
           'Use the Appwrite Functions SDK to call this function from your client application.',
         security: 
           'This function uses the built-in API key automatically provided by Appwrite (APPWRITE_FUNCTION_API_KEY). ' +
           'No manual API key configuration is required. For backward compatibility, legacy APPWRITE_API_KEY is also supported. ' +
           'Authentication is handled securely server-side - no need to pass API keys from the client. ' +
-          'The function is called using Appwrite\'s Functions SDK with proper user session context.'
+          'The /connect-wallet and /disconnect-wallet endpoints require user authentication via valid session headers.'
       };
       
       return res.json(documentation, 200);
+    }
+  }
+
+  // ========================================================================
+  // Route: Connect Wallet to Authenticated Account
+  // ========================================================================
+  
+  if (req.path === '/connect-wallet') {
+    if (req.method === 'POST') {
+      return handleConnectWallet(context);
+    } else {
+      log('Documentation requested for /connect-wallet');
+      const doc = {
+        endpoint: 'POST /connect-wallet',
+        description: 'Connect a wallet to an existing authenticated account',
+        authentication: 'Required - User must be logged in',
+        body: {
+          address: 'string (required) - Ethereum wallet address (0x...)',
+          signature: 'string (required) - Signed message from wallet',
+          message: 'string (required) - Original message that was signed (e.g., auth-1234567890)',
+        },
+        responses: {
+          '200': {
+            description: 'Wallet connected successfully',
+            body: {
+              success: 'boolean - true on success',
+              userId: 'string - Appwrite user ID',
+              message: 'string - Status message',
+            }
+          },
+          '400': {
+            description: 'Bad request - missing fields or invalid JSON',
+            body: { error: 'string - Error description' }
+          },
+          '401': {
+            description: 'Unauthorized - invalid signature or not authenticated',
+            body: { error: 'string - Error description' }
+          },
+          '403': {
+            description: 'Forbidden - account already has a wallet connected',
+            body: { error: 'string - Error description' }
+          },
+          '500': {
+            description: 'Internal server error',
+            body: { error: 'string - Error description' }
+          }
+        }
+      };
+      return res.json(doc, 200);
+    }
+  }
+
+  // ========================================================================
+  // Route: Disconnect Wallet from Authenticated Account
+  // ========================================================================
+  
+  if (req.path === '/disconnect-wallet') {
+    if (req.method === 'POST') {
+      return handleDisconnectWallet(context);
+    } else {
+      log('Documentation requested for /disconnect-wallet');
+      const doc = {
+        endpoint: 'POST /disconnect-wallet',
+        description: 'Disconnect a wallet from an existing authenticated account',
+        authentication: 'Required - User must be logged in',
+        body: '(empty - no request body needed)',
+        responses: {
+          '200': {
+            description: 'Wallet disconnected successfully',
+            body: {
+              success: 'boolean - true on success',
+              userId: 'string - Appwrite user ID',
+              message: 'string - Status message',
+            }
+          },
+          '401': {
+            description: 'Unauthorized - not authenticated',
+            body: { error: 'string - Error description' }
+          },
+          '500': {
+            description: 'Internal server error',
+            body: { error: 'string - Error description' }
+          }
+        }
+      };
+      return res.json(doc, 200);
     }
   }
 
@@ -216,6 +362,8 @@ export default async (context: AppwriteFunctionContext) => {
         'POST /auth - Authenticate with Web3 wallet',
         'POST /authenticate - Alias for /auth',
         'POST / - Alias for /auth',
+        'POST /connect-wallet - Connect wallet to authenticated account',
+        'POST /disconnect-wallet - Disconnect wallet from authenticated account',
         'GET /ping - Health check',
         'GET /health - Health check',
       ],

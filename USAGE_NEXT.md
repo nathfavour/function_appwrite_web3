@@ -12,12 +12,13 @@ A comprehensive guide for integrating Web3 wallet authentication (MetaMask, Wall
 4. [Pages Router (Next.js 12 and below)](#pages-router-nextjs-12-and-below)
 5. [Server Components & Server Actions](#server-components--server-actions)
 6. [API Routes Integration](#api-routes-integration)
-7. [Middleware & Route Protection](#middleware--route-protection)
-8. [State Management](#state-management)
-9. [Advanced Patterns](#advanced-patterns)
-10. [TypeScript Support](#typescript-support)
-11. [Best Practices](#best-practices)
-12. [Troubleshooting](#troubleshooting)
+7. [Wallet Connection in Account Settings](#wallet-connection-in-account-settings)
+8. [Middleware & Route Protection](#middleware--route-protection)
+9. [State Management](#state-management)
+10. [Advanced Patterns](#advanced-patterns)
+11. [TypeScript Support](#typescript-support)
+12. [Best Practices](#best-practices)
+13. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -923,6 +924,374 @@ export async function GET(request: NextRequest) {
   }
 }
 ```
+
+---
+
+## 🔗 Wallet Connection in Account Settings
+
+### Overview
+
+The Web3 Function provides additional APIs for managing wallet connections on existing accounts. These are distinct from the initial authentication flow:
+
+- **`/connect-wallet`**: Add a wallet to an authenticated account (from settings)
+- **`/disconnect-wallet`**: Remove a wallet from an account (from settings)
+
+Both endpoints require the user to be authenticated with an active session.
+
+### Connect Wallet Flow
+
+```tsx
+// app/components/AccountSettings.tsx
+'use client';
+
+import { useState } from 'react';
+import { functions, account } from '@/lib/appwrite';
+
+export default function AccountSettings() {
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
+  const handleConnectWallet = async () => {
+    if (!window.ethereum) {
+      setError('MetaMask not installed');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    setMessage('');
+
+    try {
+      // 1. Get current user to verify authentication
+      const user = await account.get();
+      console.log('Connected as:', user.email);
+
+      // 2. Request wallet connection
+      const accounts = await window.ethereum.request({
+        method: 'eth_requestAccounts'
+      });
+      const walletAddress = accounts[0];
+
+      // 3. Create message for user to sign
+      const timestamp = Date.now();
+      const baseMessage = `auth-${timestamp}`;
+      const fullMessage = `Sign this message to authenticate: ${baseMessage}`;
+
+      // 4. User signs the message in their wallet
+      const signature = await window.ethereum.request({
+        method: 'personal_sign',
+        params: [fullMessage, walletAddress]
+      });
+
+      // 5. Call connect-wallet endpoint
+      const execution = await functions.createExecution(
+        process.env.NEXT_PUBLIC_FUNCTION_ID!,
+        JSON.stringify({
+          address: walletAddress,
+          signature,
+          message: baseMessage
+        }),
+        false,
+        '/connect-wallet'
+      );
+
+      const response = JSON.parse(execution.responseBody);
+
+      if (execution.responseStatusCode !== 200) {
+        setError(response.error || 'Failed to connect wallet');
+        return;
+      }
+
+      setMessage(
+        `✓ Wallet ${walletAddress.substring(0, 6)}...${walletAddress.substring(38)} connected successfully!`
+      );
+
+    } catch (err: any) {
+      setError(err.message || 'Error connecting wallet');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDisconnectWallet = async () => {
+    setLoading(true);
+    setError('');
+    setMessage('');
+
+    try {
+      // Call disconnect-wallet endpoint
+      const execution = await functions.createExecution(
+        process.env.NEXT_PUBLIC_FUNCTION_ID!,
+        JSON.stringify({}),
+        false,
+        '/disconnect-wallet'
+      );
+
+      const response = JSON.parse(execution.responseBody);
+
+      if (execution.responseStatusCode !== 200) {
+        setError(response.error || 'Failed to disconnect wallet');
+        return;
+      }
+
+      setMessage('✓ Wallet disconnected successfully');
+
+    } catch (err: any) {
+      setError(err.message || 'Error disconnecting wallet');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="p-6 border rounded-lg max-w-md">
+      <h2 className="text-xl font-bold mb-4">Account Settings</h2>
+
+      <div className="space-y-4">
+        <button
+          onClick={handleConnectWallet}
+          disabled={loading}
+          className="w-full px-4 py-2 bg-blue-500 text-white rounded disabled:opacity-50"
+        >
+          {loading ? 'Processing...' : 'Connect Wallet'}
+        </button>
+
+        <button
+          onClick={handleDisconnectWallet}
+          disabled={loading}
+          className="w-full px-4 py-2 bg-red-500 text-white rounded disabled:opacity-50"
+        >
+          {loading ? 'Processing...' : 'Disconnect Wallet'}
+        </button>
+
+        {message && (
+          <div className="p-3 bg-green-100 text-green-700 rounded">
+            {message}
+          </div>
+        )}
+
+        {error && (
+          <div className="p-3 bg-red-100 text-red-700 rounded">
+            {error}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+```
+
+### Connect Wallet Hook
+
+```typescript
+// hooks/useWalletManager.ts
+'use client';
+
+import { useState } from 'react';
+import { functions } from '@/lib/appwrite';
+
+interface WalletManagerState {
+  loading: boolean;
+  error: string | null;
+  success: string | null;
+}
+
+export function useWalletManager() {
+  const [state, setState] = useState<WalletManagerState>({
+    loading: false,
+    error: null,
+    success: null
+  });
+
+  const connectWallet = async (): Promise<boolean> => {
+    if (!window.ethereum) {
+      setState(prev => ({ ...prev, error: 'MetaMask not installed' }));
+      return false;
+    }
+
+    setState(prev => ({ ...prev, loading: true, error: null, success: null }));
+
+    try {
+      const accounts = await window.ethereum.request({
+        method: 'eth_requestAccounts'
+      });
+      const address = accounts[0];
+
+      const timestamp = Date.now();
+      const message = `auth-${timestamp}`;
+      const fullMessage = `Sign this message to authenticate: ${message}`;
+
+      const signature = await window.ethereum.request({
+        method: 'personal_sign',
+        params: [fullMessage, address]
+      });
+
+      const execution = await functions.createExecution(
+        process.env.NEXT_PUBLIC_FUNCTION_ID!,
+        JSON.stringify({ address, signature, message }),
+        false,
+        '/connect-wallet'
+      );
+
+      const response = JSON.parse(execution.responseBody);
+
+      if (execution.responseStatusCode !== 200) {
+        throw new Error(response.error || 'Failed to connect wallet');
+      }
+
+      setState(prev => ({
+        ...prev,
+        success: `Wallet connected: ${address}`
+      }));
+      return true;
+
+    } catch (err: any) {
+      setState(prev => ({
+        ...prev,
+        error: err.message || 'Error connecting wallet'
+      }));
+      return false;
+    } finally {
+      setState(prev => ({ ...prev, loading: false }));
+    }
+  };
+
+  const disconnectWallet = async (): Promise<boolean> => {
+    setState(prev => ({ ...prev, loading: true, error: null, success: null }));
+
+    try {
+      const execution = await functions.createExecution(
+        process.env.NEXT_PUBLIC_FUNCTION_ID!,
+        JSON.stringify({}),
+        false,
+        '/disconnect-wallet'
+      );
+
+      const response = JSON.parse(execution.responseBody);
+
+      if (execution.responseStatusCode !== 200) {
+        throw new Error(response.error || 'Failed to disconnect wallet');
+      }
+
+      setState(prev => ({
+        ...prev,
+        success: 'Wallet disconnected successfully'
+      }));
+      return true;
+
+    } catch (err: any) {
+      setState(prev => ({
+        ...prev,
+        error: err.message || 'Error disconnecting wallet'
+      }));
+      return false;
+    } finally {
+      setState(prev => ({ ...prev, loading: false }));
+    }
+  };
+
+  const clearMessages = () => {
+    setState(prev => ({
+      ...prev,
+      error: null,
+      success: null
+    }));
+  };
+
+  return {
+    ...state,
+    connectWallet,
+    disconnectWallet,
+    clearMessages
+  };
+}
+```
+
+### Usage with Hook
+
+```tsx
+// app/components/WalletManager.tsx
+'use client';
+
+import { useWalletManager } from '@/hooks/useWalletManager';
+
+export default function WalletManager() {
+  const {
+    loading,
+    error,
+    success,
+    connectWallet,
+    disconnectWallet,
+    clearMessages
+  } = useWalletManager();
+
+  return (
+    <div className="space-y-4">
+      <button
+        onClick={connectWallet}
+        disabled={loading}
+      >
+        {loading ? 'Connecting...' : 'Connect Wallet'}
+      </button>
+
+      <button
+        onClick={disconnectWallet}
+        disabled={loading}
+      >
+        {loading ? 'Disconnecting...' : 'Disconnect Wallet'}
+      </button>
+
+      {success && (
+        <div className="p-3 bg-green-100 rounded">
+          ✓ {success}
+        </div>
+      )}
+
+      {error && (
+        <div className="p-3 bg-red-100 rounded">
+          ✗ {error}
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+### TypeScript Types
+
+```typescript
+// types/wallet.ts
+export interface ConnectWalletRequest {
+  address: string;      // Ethereum wallet address (0x...)
+  signature: string;    // Signed message from wallet
+  message: string;      // Original message (auth-{timestamp})
+}
+
+export interface ConnectWalletResponse {
+  success: boolean;
+  userId: string;
+  message: string;
+}
+
+export interface DisconnectWalletResponse {
+  success: boolean;
+  userId: string;
+  message: string;
+}
+```
+
+### Important Notes
+
+- **Authentication Required**: Both `/connect-wallet` and `/disconnect-wallet` require an active user session. The function extracts the user ID from the Authorization header.
+
+- **One Wallet Per Account**: Each account can only have one connected wallet. To switch wallets, disconnect the old one first.
+
+- **Email Account Protection**: Accounts created via email OTP cannot have wallets added directly. They must first be authenticated with a passkey or already have a wallet bound.
+
+- **Signature Format**: The signature must be valid for the wallet address. Invalid signatures will be rejected with a 401 status.
+
+- **No Session Creation**: Unlike `/auth`, these endpoints do NOT create a new session. They assume the user is already authenticated.
 
 ---
 

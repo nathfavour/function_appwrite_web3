@@ -118,3 +118,43 @@ export interface ApiDocumentation {
   security: string;
 }
 
+// ============================================================================
+// Wallet Connection Types (for account settings)
+// ============================================================================
+
+/**
+ * Wallet connection request payload
+ * Used when adding a wallet to an existing authenticated account
+ */
+export interface ConnectWalletRequest {
+  address: string;         // Ethereum wallet address (0x...)
+  signature: string;       // Signature produced by wallet
+  message: string;         // Original message (timestamp part: auth-{timestamp})
+}
+
+/**
+ * Wallet connection response
+ */
+export interface ConnectWalletResponse {
+  success: boolean;
+  userId: string;
+  message: string;
+}
+
+/**
+ * Wallet disconnection request payload
+ * Used when removing a wallet from an existing account
+ */
+export interface DisconnectWalletRequest {
+  // No body required - uses authenticated session
+}
+
+/**
+ * Wallet disconnection response
+ */
+export interface DisconnectWalletResponse {
+  success: boolean;
+  userId: string;
+  message: string;
+}
+
