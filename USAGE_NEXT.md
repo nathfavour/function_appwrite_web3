@@ -934,13 +934,15 @@ export async function GET(request: NextRequest) {
 The Web3 Function provides an API for verifying and connecting wallets to existing authenticated accounts. This is distinct from initial authentication:
 
 - **`POST /connect-wallet`**: Verify wallet ownership and bind to existing account (server-side verification)
+  - Requires: `userId`, `address`, `signature`, `message`
+  - Client must be authenticated and send their own user ID
 - **Disconnect Wallet**: Simple client-side preference removal (no API needed)
-
-Both require the user to already be authenticated with an active session.
 
 ### Connect Wallet Flow - Server Verification
 
 This follows the same wallet verification approach as the registration flow: wallet signature verification, then binding.
+
+**Important:** The client must be authenticated (logged in) to get their user ID via `account.get()`. That `userId` is then sent to the function.
 
 ```tsx
 // app/components/AccountSettings.tsx
@@ -965,8 +967,9 @@ export default function AccountSettings() {
     setMessage('');
 
     try {
-      // 1. Verify user is authenticated
+      // 1. Verify user is authenticated and get their ID
       const user = await account.get();
+      const userId = user.$id;
       console.log('Connected as:', user.email);
 
       // 2. Request wallet connection
@@ -990,6 +993,7 @@ export default function AccountSettings() {
       const execution = await functions.createExecution(
         process.env.NEXT_PUBLIC_FUNCTION_ID!,
         JSON.stringify({
+          userId,
           address: walletAddress,
           signature,
           message: baseMessage
@@ -1109,6 +1113,9 @@ export function useWalletManager() {
     setState(prev => ({ ...prev, loading: true, error: null, success: null }));
 
     try {
+      const user = await account.get();
+      const userId = user.$id;
+
       const accounts = await window.ethereum.request({
         method: 'eth_requestAccounts'
       });
@@ -1125,7 +1132,7 @@ export function useWalletManager() {
 
       const execution = await functions.createExecution(
         process.env.NEXT_PUBLIC_FUNCTION_ID!,
-        JSON.stringify({ address, signature, message }),
+        JSON.stringify({ userId, address, signature, message }),
         false,
         '/connect-wallet'
       );
@@ -1253,6 +1260,7 @@ export default function WalletManager() {
 ```typescript
 // types/wallet.ts
 export interface ConnectWalletRequest {
+  userId: string;       // Current user ID from account.get()
   address: string;      // Ethereum wallet address (0x...)
   signature: string;    // Signed message from wallet
   message: string;      // Original message (auth-{timestamp})
@@ -1260,14 +1268,14 @@ export interface ConnectWalletRequest {
 
 export interface ConnectWalletResponse {
   success: boolean;
-  userId: string;
+  userId: string;       // User ID that was updated
   message: string;
 }
 ```
 
 ### Important Notes
 
-- **Connect Wallet**: Requires server-side verification via the `/connect-wallet` endpoint to cryptographically prove wallet ownership before binding to the account.
+- **Connect Wallet Requires userId**: The client must call `account.get()` to get their user ID, then send it in the request body along with wallet signature data. The function uses this ID to fetch and update the user.
 
 - **Disconnect Wallet**: No API endpoint needed. Simply call `account.updatePrefs()` from the client to remove `walletEth` from preferences. It's already authenticated.
 
@@ -1277,7 +1285,7 @@ export interface ConnectWalletResponse {
 
 - **Signature Format**: The signature must be valid for the wallet address. Invalid signatures will be rejected with a 401 status.
 
-- **Session Context**: The client automatically passes session context via cookies. No manual header manipulation needed.
+- **Session Context**: The client must be authenticated (have an active session) to get their userId via `account.get()`. This userId proves who they are when calling the function.
 
 ---
 

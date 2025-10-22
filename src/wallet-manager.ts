@@ -4,25 +4,39 @@
  * This module handles wallet connection for existing authenticated accounts.
  * This is distinct from authentication flow - it's used to add a wallet to an account.
  * 
- * Uses the session context from request headers (passed by authenticated client).
- * The client must already be logged in.
+ * Client must send their user ID in the request body.
+ * The API key is used to update preferences for the authenticated user.
  * 
  * NOTE: Wallet disconnection is a client-side operation - simply delete walletEth pref via SDK.
  */
 
-import { Account, Users, Client } from 'node-appwrite';
+import { Users, Client } from 'node-appwrite';
 import {
   verifySignature,
   normalizeEthAddress,
   createSignableMessage,
 } from './web3-utils.js';
+import {
+  createAppwriteClient,
+} from './appwrite-helpers.js';
 import type {
   AppwriteFunctionContext,
-  ConnectWalletRequest,
-  ConnectWalletResponse,
   ErrorResponse,
   UserPrefs,
 } from './types.js';
+
+interface ConnectWalletRequest {
+  userId: string;
+  address: string;
+  signature: string;
+  message: string;
+}
+
+interface ConnectWalletResponse {
+  success: boolean;
+  userId: string;
+  message: string;
+}
 
 /**
  * Connects a wallet to an existing authenticated account
@@ -53,17 +67,17 @@ export async function handleConnectWallet(
       return res.json(errorResponse, 400);
     }
 
-    const { address, signature, message } = connectRequest;
+    const { userId, address, signature, message } = connectRequest;
 
-    if (!address || !signature || !message) {
+    if (!userId || !address || !signature || !message) {
       log('Missing required fields in request');
       const errorResponse: ErrorResponse = {
-        error: 'Missing required fields: address, signature, message',
+        error: 'Missing required fields: userId, address, signature, message',
       };
       return res.json(errorResponse, 400);
     }
 
-    log(`Connecting wallet ${address}`);
+    log(`User ${userId} connecting wallet ${address}`);
 
     // ========================================================================
     // Step 2: Verify wallet signature (same as auth flow)
@@ -89,54 +103,37 @@ export async function handleConnectWallet(
     log('✓ Signature verified successfully');
 
     // ========================================================================
-    // Step 3: Initialize Appwrite client using session from request
+    // Step 3: Initialize Appwrite client using API key
     // ========================================================================
     
-    const sessionToken = req.headers['x-appwrite-session'] as string;
-    if (!sessionToken) {
-      logError('No session token in request headers');
-      const errorResponse: ErrorResponse = {
-        error: 'Authentication required. Please log in first.',
-      };
-      return res.json(errorResponse, 401);
-    }
-
-    const endpoint = process.env.APPWRITE_FUNCTION_API_ENDPOINT;
-    const projectId = process.env.APPWRITE_FUNCTION_PROJECT_ID;
-
-    if (!endpoint || !projectId) {
-      logError('Appwrite environment variables not configured');
+    const apiKey = process.env.APPWRITE_FUNCTION_API_KEY || process.env.APPWRITE_API_KEY;
+    if (!apiKey) {
+      logError('Function API key not configured in environment');
       const errorResponse: ErrorResponse = {
         error: 'Server configuration error',
       };
       return res.json(errorResponse, 500);
     }
 
-    const client = new Client()
-      .setEndpoint(endpoint)
-      .setProject(projectId)
-      .setSession(sessionToken);
-
-    const account = new Account(client);
+    const client = createAppwriteClient(apiKey);
     const users = new Users(client);
 
     // ========================================================================
-    // Step 4: Get the authenticated user from session
+    // Step 4: Get the user by their ID and verify it exists
     // ========================================================================
     
     let user: any;
     try {
-      user = await account.get();
+      user = await users.get(userId);
     } catch (userError: any) {
-      logError(`Failed to get authenticated user: ${userError.message}`);
+      logError(`User not found: ${userError.message}`);
       const errorResponse: ErrorResponse = {
-        error: 'Authentication required. Please log in first.',
+        error: 'User not found. Are you logged in?',
       };
       return res.json(errorResponse, 401);
     }
 
-    const userId = user.$id;
-    log(`User ${userId} connecting wallet ${address}`);
+    log(`User ${userId} found, connecting wallet ${address}`);
 
     // ========================================================================
     // Step 5: Normalize wallet address
