@@ -931,14 +931,16 @@ export async function GET(request: NextRequest) {
 
 ### Overview
 
-The Web3 Function provides additional APIs for managing wallet connections on existing accounts. These are distinct from the initial authentication flow:
+The Web3 Function provides an API for verifying and connecting wallets to existing authenticated accounts. This is distinct from initial authentication:
 
-- **`/connect-wallet`**: Add a wallet to an authenticated account (from settings)
-- **`/disconnect-wallet`**: Remove a wallet from an account (from settings)
+- **`POST /connect-wallet`**: Verify wallet ownership and bind to existing account (server-side verification)
+- **Disconnect Wallet**: Simple client-side preference removal (no API needed)
 
-Both endpoints require the user to be authenticated with an active session.
+Both require the user to already be authenticated with an active session.
 
-### Connect Wallet Flow
+### Connect Wallet Flow - Server Verification
+
+This follows the same wallet verification approach as the registration flow: wallet signature verification, then binding.
 
 ```tsx
 // app/components/AccountSettings.tsx
@@ -963,7 +965,7 @@ export default function AccountSettings() {
     setMessage('');
 
     try {
-      // 1. Get current user to verify authentication
+      // 1. Verify user is authenticated
       const user = await account.get();
       console.log('Connected as:', user.email);
 
@@ -984,7 +986,7 @@ export default function AccountSettings() {
         params: [fullMessage, walletAddress]
       });
 
-      // 5. Call connect-wallet endpoint
+      // 5. Call connect-wallet endpoint for server verification
       const execution = await functions.createExecution(
         process.env.NEXT_PUBLIC_FUNCTION_ID!,
         JSON.stringify({
@@ -1020,20 +1022,14 @@ export default function AccountSettings() {
     setMessage('');
 
     try {
-      // Call disconnect-wallet endpoint
-      const execution = await functions.createExecution(
-        process.env.NEXT_PUBLIC_FUNCTION_ID!,
-        JSON.stringify({}),
-        false,
-        '/disconnect-wallet'
-      );
-
-      const response = JSON.parse(execution.responseBody);
-
-      if (execution.responseStatusCode !== 200) {
-        setError(response.error || 'Failed to disconnect wallet');
-        return;
-      }
+      // Get current user
+      const user = await account.get();
+      
+      // Remove wallet from prefs
+      await account.updatePrefs({
+        ...user.prefs,
+        walletEth: undefined
+      });
 
       setMessage('✓ Wallet disconnected successfully');
 
@@ -1089,7 +1085,7 @@ export default function AccountSettings() {
 'use client';
 
 import { useState } from 'react';
-import { functions } from '@/lib/appwrite';
+import { functions, account } from '@/lib/appwrite';
 
 interface WalletManagerState {
   loading: boolean;
@@ -1161,18 +1157,12 @@ export function useWalletManager() {
     setState(prev => ({ ...prev, loading: true, error: null, success: null }));
 
     try {
-      const execution = await functions.createExecution(
-        process.env.NEXT_PUBLIC_FUNCTION_ID!,
-        JSON.stringify({}),
-        false,
-        '/disconnect-wallet'
-      );
-
-      const response = JSON.parse(execution.responseBody);
-
-      if (execution.responseStatusCode !== 200) {
-        throw new Error(response.error || 'Failed to disconnect wallet');
-      }
+      const user = await account.get();
+      
+      await account.updatePrefs({
+        ...user.prefs,
+        walletEth: undefined
+      });
 
       setState(prev => ({
         ...prev,
@@ -1273,19 +1263,13 @@ export interface ConnectWalletResponse {
   userId: string;
   message: string;
 }
-
-export interface DisconnectWalletResponse {
-  success: boolean;
-  userId: string;
-  message: string;
-}
 ```
 
 ### Important Notes
 
-- **Authentication Required**: Both `/connect-wallet` and `/disconnect-wallet` require an active user session. The client already has authenticated context - just call these endpoints normally with your session active.
+- **Connect Wallet**: Requires server-side verification via the `/connect-wallet` endpoint to cryptographically prove wallet ownership before binding to the account.
 
-- **No Custom Headers**: Don't manually add Authorization headers. The Appwrite SDK handles session context automatically.
+- **Disconnect Wallet**: No API endpoint needed. Simply call `account.updatePrefs()` from the client to remove `walletEth` from preferences. It's already authenticated.
 
 - **One Wallet Per Account**: Each account can only have one connected wallet. To switch wallets, disconnect the old one first.
 
@@ -1293,7 +1277,7 @@ export interface DisconnectWalletResponse {
 
 - **Signature Format**: The signature must be valid for the wallet address. Invalid signatures will be rejected with a 401 status.
 
-- **No Session Creation**: Unlike `/auth`, these endpoints do NOT create a new session. They update prefs on the authenticated user's existing account.
+- **Session Context**: The client automatically passes session context via cookies. No manual header manipulation needed.
 
 ---
 

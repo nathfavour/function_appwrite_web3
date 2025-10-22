@@ -1,11 +1,13 @@
 /**
- * Wallet Manager Handler
+ * Wallet Manager Handler - Connect Wallet Only
  * 
- * This module handles wallet connection and disconnection for existing authenticated accounts.
- * These are distinct from authentication flows - they're used in account settings to add/remove wallets.
+ * This module handles wallet connection for existing authenticated accounts.
+ * This is distinct from authentication flow - it's used to add a wallet to an account.
  * 
- * Uses the same SDK initialization approach as the auth handler.
- * The authenticated client context is used directly via the SDK.
+ * Uses the session context from request headers (passed by authenticated client).
+ * The client must already be logged in.
+ * 
+ * NOTE: Wallet disconnection is a client-side operation - simply delete walletEth pref via SDK.
  */
 
 import { Account, Users, Client } from 'node-appwrite';
@@ -14,14 +16,10 @@ import {
   normalizeEthAddress,
   createSignableMessage,
 } from './web3-utils.js';
-import {
-  createAppwriteClient,
-} from './appwrite-helpers.js';
 import type {
   AppwriteFunctionContext,
   ConnectWalletRequest,
   ConnectWalletResponse,
-  DisconnectWalletResponse,
   ErrorResponse,
   UserPrefs,
 } from './types.js';
@@ -29,8 +27,8 @@ import type {
 /**
  * Connects a wallet to an existing authenticated account
  * 
- * Uses the same authentication context the client has.
- * Follows the same registration flow: verify signature, then update user prefs.
+ * Verifies wallet ownership via signature, then binds to existing account prefs.
+ * Follows same verification approach as registration flow: sign message, verify, bind.
  * 
  * @param context - Appwrite Function context
  */
@@ -91,24 +89,39 @@ export async function handleConnectWallet(
     log('✓ Signature verified successfully');
 
     // ========================================================================
-    // Step 3: Initialize Appwrite client using SDK
+    // Step 3: Initialize Appwrite client using session from request
     // ========================================================================
     
-    const apiKey = process.env.APPWRITE_FUNCTION_API_KEY || process.env.APPWRITE_API_KEY;
-    if (!apiKey) {
-      logError('Function API key not configured in environment');
+    const sessionToken = req.headers['x-appwrite-session'] as string;
+    if (!sessionToken) {
+      logError('No session token in request headers');
+      const errorResponse: ErrorResponse = {
+        error: 'Authentication required. Please log in first.',
+      };
+      return res.json(errorResponse, 401);
+    }
+
+    const endpoint = process.env.APPWRITE_FUNCTION_API_ENDPOINT;
+    const projectId = process.env.APPWRITE_FUNCTION_PROJECT_ID;
+
+    if (!endpoint || !projectId) {
+      logError('Appwrite environment variables not configured');
       const errorResponse: ErrorResponse = {
         error: 'Server configuration error',
       };
       return res.json(errorResponse, 500);
     }
 
-    const client = createAppwriteClient(apiKey);
+    const client = new Client()
+      .setEndpoint(endpoint)
+      .setProject(projectId)
+      .setSession(sessionToken);
+
     const account = new Account(client);
     const users = new Users(client);
 
     // ========================================================================
-    // Step 4: Get the authenticated user from the client context
+    // Step 4: Get the authenticated user from session
     // ========================================================================
     
     let user: any;
@@ -189,109 +202,6 @@ export async function handleConnectWallet(
     logError(`Unexpected error: ${err.message}`);
     const errorResponse: ErrorResponse = {
       error: err.message || 'Failed to connect wallet',
-    };
-    return res.json(errorResponse, 500);
-  }
-}
-
-/**
- * Disconnects a wallet from an existing authenticated account
- * 
- * Uses the same authentication context the client has.
- * Simple: get authenticated user, remove wallet from prefs.
- * 
- * @param context - Appwrite Function context
- */
-export async function handleDisconnectWallet(
-  context: AppwriteFunctionContext
-): Promise<void> {
-  const { req, res, log, error: logError } = context;
-
-  try {
-    // ========================================================================
-    // Step 1: Initialize Appwrite client using SDK
-    // ========================================================================
-    
-    const apiKey = process.env.APPWRITE_FUNCTION_API_KEY || process.env.APPWRITE_API_KEY;
-    if (!apiKey) {
-      logError('Function API key not configured in environment');
-      const errorResponse: ErrorResponse = {
-        error: 'Server configuration error',
-      };
-      return res.json(errorResponse, 500);
-    }
-
-    const client = createAppwriteClient(apiKey);
-    const account = new Account(client);
-    const users = new Users(client);
-
-    // ========================================================================
-    // Step 2: Get the authenticated user from the client context
-    // ========================================================================
-    
-    let user: any;
-    try {
-      user = await account.get();
-    } catch (userError: any) {
-      logError(`Failed to get authenticated user: ${userError.message}`);
-      const errorResponse: ErrorResponse = {
-        error: 'Authentication required. Please log in first.',
-      };
-      return res.json(errorResponse, 401);
-    }
-
-    const userId = user.$id;
-    log(`User ${userId} requesting wallet disconnection`);
-
-    // ========================================================================
-    // Step 3: Get user preferences and remove wallet
-    // ========================================================================
-    
-    const prefs = (user.prefs || {}) as UserPrefs;
-    const hadWallet = Boolean(prefs.walletEth);
-
-    if (!hadWallet) {
-      log('No wallet connected to this account');
-      const response: DisconnectWalletResponse = {
-        success: true,
-        userId,
-        message: 'No wallet connected to this account',
-      };
-      return res.json(response, 200);
-    }
-
-    // ========================================================================
-    // Step 4: Update preferences to remove wallet
-    // ========================================================================
-    
-    try {
-      const updatedPrefs: UserPrefs = { ...prefs };
-      delete updatedPrefs.walletEth;
-
-      await users.updatePrefs(userId, updatedPrefs);
-
-      log(`✓ Wallet disconnected from user ${userId}`);
-
-      const successResponse: DisconnectWalletResponse = {
-        success: true,
-        userId,
-        message: 'Wallet disconnected successfully from your account',
-      };
-
-      return res.json(successResponse, 200);
-      
-    } catch (updateError: any) {
-      logError(`Failed to update user preferences: ${updateError.message}`);
-      const errorResponse: ErrorResponse = {
-        error: 'Failed to disconnect wallet',
-      };
-      return res.json(errorResponse, 500);
-    }
-    
-  } catch (err: any) {
-    logError(`Unexpected error: ${err.message}`);
-    const errorResponse: ErrorResponse = {
-      error: err.message || 'Failed to disconnect wallet',
     };
     return res.json(errorResponse, 500);
   }
